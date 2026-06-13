@@ -32,8 +32,8 @@ public class Bootstrap : MonoBehaviour
         SetupCamera();
         if (buildArena) BuildArena();
         var player = playerOverride != null
-            ? PlacePlayer(playerOverride, Vector2.zero)
-            : SpawnPlayer(Vector2.zero);
+            ? PlacePlayer(playerOverride, ResolveSpawn(playerOverride))
+            : SpawnPlayer(ResolveSpawn(null));
         AttachCameraFollow(player.transform);
     }
 
@@ -46,7 +46,7 @@ public class Bootstrap : MonoBehaviour
             cam = go.AddComponent<Camera>();
         }
         cam.orthographic = true;
-        cam.orthographicSize = arenaHeight * 0.6f;
+        if (buildArena) cam.orthographicSize = arenaHeight * 0.6f;  // only drive zoom for the procedural arena
         cam.backgroundColor = new Color(0.05f, 0.06f, 0.09f);
         cam.transform.position = new Vector3(0f, 0f, -10f);
     }
@@ -131,6 +131,25 @@ public class Bootstrap : MonoBehaviour
     {
         player.transform.position = new Vector3(pos.x, pos.y, 0f);
         return player;
+    }
+
+    // Where the player should appear: at the SpawnPoint matching a pending travel
+    // target (set by a Portal), otherwise wherever it already sits in the scene.
+    Vector2 ResolveSpawn(GameObject player)
+    {
+        if (!string.IsNullOrEmpty(SceneTravel.Target))
+        {
+            foreach (var sp in FindObjectsByType<SpawnPoint>(FindObjectsSortMode.None))
+            {
+                if (sp.id == SceneTravel.Target)
+                {
+                    SceneTravel.Target = null;
+                    return sp.transform.position;
+                }
+            }
+            SceneTravel.Target = null;   // id not found in this scene; ignore it
+        }
+        return player != null ? (Vector2)player.transform.position : Vector2.zero;
     }
 
     void AttachCameraFollow(Transform target)

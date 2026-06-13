@@ -60,6 +60,7 @@ public static class PlayerBuilder
 
         var sr = go.AddComponent<SpriteRenderer>();
         sr.sortingOrder = 10;
+        sr.sprite = frames[0];   // set the sprite BEFORE adding the collider (auto-size reads it)
 
         var rb = go.AddComponent<Rigidbody2D>();
         rb.gravityScale = 0f;
@@ -67,8 +68,10 @@ public static class PlayerBuilder
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
         rb.interpolation = RigidbodyInterpolation2D.Interpolate;
 
-        go.AddComponent<BoxCollider2D>();
+        var box = go.AddComponent<BoxCollider2D>();
+        box.size = Vector2.one * 0.8f;   // explicit, slightly inset — never rely on auto-size being non-zero
         go.AddComponent<PlayerController2D>();
+        go.AddComponent<PlayerInteractor>();   // lets the player talk to NPCs / use portals
 
         // One column = one facing. Take the top `walk` rows of each column.
         Sprite[] Column(int c) =>
@@ -79,8 +82,6 @@ public static class PlayerBuilder
         anim.up    = Column(1);
         anim.left  = Column(2);
         anim.right = Column(3);
-
-        sr.sprite = anim.down[0];
 
         Undo.RegisterCreatedObjectUndo(go, "Build Player");
 
