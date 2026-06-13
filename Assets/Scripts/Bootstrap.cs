@@ -11,6 +11,10 @@ using UnityEngine;
 /// </summary>
 public class Bootstrap : MonoBehaviour
 {
+    [Tooltip("Build the procedural box arena (floor/walls/crates). Turn this OFF " +
+             "once you have a real Tilemap field so the two don't overlap.")]
+    public bool buildArena = true;
+
     [Header("Arena size (in tiles)")]
     public int arenaWidth = 24;
     public int arenaHeight = 16;
@@ -18,11 +22,18 @@ public class Bootstrap : MonoBehaviour
     [Header("Obstacles")]
     public int crateCount = 14;
 
+    [Header("Player")]
+    [Tooltip("Your real animated player (SpriteRenderer + PlayerController2D + " +
+             "CharacterAnimator2D). Leave empty to spawn the placeholder box.")]
+    public GameObject playerOverride;
+
     void Start()
     {
         SetupCamera();
-        BuildArena();
-        var player = SpawnPlayer(Vector2.zero);
+        if (buildArena) BuildArena();
+        var player = playerOverride != null
+            ? PlacePlayer(playerOverride, Vector2.zero)
+            : SpawnPlayer(Vector2.zero);
         AttachCameraFollow(player.transform);
     }
 
@@ -112,6 +123,14 @@ public class Bootstrap : MonoBehaviour
         go.AddComponent<BoxCollider2D>();
         go.AddComponent<PlayerController2D>();
         return go;
+    }
+
+    // Use an existing player GameObject (your real animated character) instead of
+    // the generated box: drop it at the spawn point and hand it back.
+    GameObject PlacePlayer(GameObject player, Vector2 pos)
+    {
+        player.transform.position = new Vector3(pos.x, pos.y, 0f);
+        return player;
     }
 
     void AttachCameraFollow(Transform target)
