@@ -80,7 +80,8 @@ public static class UIShellBuilder
         var chr    = BuildCharacterPanel(root);
         var skills = BuildSkillsPanel(root);
         BuildTooltip(root);       // on top of every panel
-        BuildCombatCursor(root);  // the sword pointer — the very topmost child
+        // (The old UI-image sword cursor was retired — GameCursor now drives a hardware
+        //  cursor from the Kenney pack, wired by Tools ▸ unwritten ▸ Setup Mouse Combat.)
 
         var toggle = canvasGO.AddComponent<PanelToggle>();
         toggle.panels = new[]
@@ -228,26 +229,6 @@ public static class UIShellBuilder
         var t = NewText("Label", row.transform, label, 16, FontStyle.Normal, TextAnchor.MiddleLeft, true);
         Fill(t.rectTransform, new Vector2(50, 0), new Vector2(-4, 0));
     }
-
-    // The sword "attack" pointer (CombatCursor shows/hides + moves it at runtime).
-    static void BuildCombatCursor(Transform canvas)
-    {
-        var sword = LoadSprite("Assets/Art/NinjaAdventure/Items/Weapons/Sword/Sprite.png");
-        var img = NewColor("CombatCursor", canvas, Color.white);
-        img.raycastTarget = false;
-        img.sprite = sword;
-        img.preserveAspect = true;
-        var rt = img.rectTransform;
-        rt.anchorMin = rt.anchorMax = Vector2.zero;   // positioned in screen pixels at runtime
-        rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.sizeDelta = new Vector2(34, 40);
-        img.enabled = false;                          // hidden until the cursor is over an enemy
-
-        img.gameObject.AddComponent<CombatCursor>().icon = img;
-    }
-
-    static Sprite LoadSprite(string path)
-        => AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>().FirstOrDefault();
 
     // A single shared item tooltip that follows the cursor (filled by ItemTooltip).
     static void BuildTooltip(Transform canvas)

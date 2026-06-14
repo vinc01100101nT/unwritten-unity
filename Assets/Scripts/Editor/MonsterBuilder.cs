@@ -40,7 +40,7 @@ public static class MonsterBuilder
         EditorSceneManager.MarkSceneDirty(go.scene);
         Selection.activeGameObject = go;
         Debug.Log($"[unwritten] Created Monster from '{tex.name}'.{combat} " +
-                  "Press Play, then left-click the monster to attack it (a down-arrow marks your target).");
+                  "Press Play, then RIGHT-CLICK the monster to attack it (or press A then click). A down-arrow marks your target.");
     }
 
     [MenuItem("Tools/unwritten/Create Monster Spawner from selected SpriteSheet")]
@@ -151,7 +151,10 @@ public static class MonsterBuilder
     static Vector3 NearPlayer(PlayerController2D pc, float dx) =>
         (pc != null ? pc.transform.position : Vector3.zero) + new Vector3(dx, 0f, 0f);
 
-    /// <summary>Ensure the player has mouse-target combat, with sensible range/cooldown.</summary>
+    const string SlashFxPath = "Assets/Art/NinjaAdventure/FX/Attack/SlashCurved/SpriteSheet.png";
+
+    /// <summary>Ensure the player has mouse-target combat (range/cooldown) plus the
+    /// attack-pose + slash-FX feedback, so swings don't look static.</summary>
     public static string EnsurePlayerCombat(PlayerController2D pc)
     {
         if (pc == null) return "";
@@ -160,10 +163,67 @@ public static class MonsterBuilder
         if (added) atk = Undo.AddComponent<PlayerAttacker>(pc.gameObject);
         atk.range = 1.4f;
         atk.cooldown = 0.6f;
+        atk.windupTime = 0.18f;   // damage lands at the end of this window, so S can cancel it
+
+        // Slash FX strip shown on each swing.
+        var slash = AssetDatabase.LoadAssetAtPath<Texture2D>(SlashFxPath);
+        if (slash != null) atk.slashSheet = slash;
         EditorUtility.SetDirty(atk);
-        return added ? " Added mouse-target combat to the Player (left-click a monster to attack)."
-                     : " Player combat is ready (left-click a monster to attack).";
+
+        // Dota-style order controller (right-click move/attack/follow, A attack-click, S stop)
+        // and the Kenney hardware cursor that swaps pointer/sword/crosshair.
+        if (pc.GetComponent<PlayerCommander>() == null)
+            Undo.AddComponent<PlayerCommander>(pc.gameObject);
+        EnsureGameCursor(pc);
+
+        // Attack pose, pulled from this character's own SeparateAnim/Attack.png.
+        bool pose = false;
+        var anim = pc.GetComponent<CharacterAnimator2D>();
+        var sr = pc.GetComponent<SpriteRenderer>();
+        if (anim != null && sr != null && sr.sprite != null)
+        {
+            string sheetPath = AssetDatabase.GetAssetPath(sr.sprite.texture);
+            if (!string.IsNullOrEmpty(sheetPath))
+            {
+                string folder = Path.GetDirectoryName(sheetPath).Replace('\\', '/');
+                var attackTex = AssetDatabase.LoadAssetAtPath<Texture2D>(folder + "/SeparateAnim/Attack.png");
+                if (attackTex != null) { anim.attackSheet = attackTex; EditorUtility.SetDirty(anim); pose = true; }
+            }
+        }
+
+        string fx = (slash != null ? " slash FX" : "") + (pose ? (slash != null ? " +" : "") + " attack pose" : "");
+        return (added ? " Added Dota-style combat to the Player" : " Player combat ready") +
+               " (right-click move/attack/follow, A+click attack-move, S stop" + (fx.Length > 0 ? ";" + fx + " wired" : "") + ").";
     }
+
+    const string CursorDir = "Assets/Art/KenneyCursorPack/PNG/Outline/Default";
+
+    /// <summary>Attach + configure the hardware <see cref="GameCursor"/> on the player using
+    /// the Outline Kenney cursors. Force-reimports the three PNGs so they're readable Cursor
+    /// textures (see PixelArtImportPostprocessor) — no manual reimport needed.</summary>
+    static void EnsureGameCursor(PlayerController2D pc)
+    {
+        foreach (var n in new[] { "pointer_b", "tool_sword_a", "target_b" })
+            AssetDatabase.ImportAsset($"{CursorDir}/{n}.png", ImportAssetOptions.ForceUpdate);
+
+        var cursor = pc.GetComponent<GameCursor>();
+        if (cursor == null) cursor = Undo.AddComponent<GameCursor>(pc.gameObject);
+
+        cursor.defaultCursor     = LoadCursorTex("pointer_b");     // normal pointer
+        cursor.attackCursor      = LoadCursorTex("tool_sword_a");  // hovering an enemy
+        cursor.attackMoveCursor  = LoadCursorTex("target_b");      // A-armed (attack-click)
+        cursor.defaultHotspot    = new Vector2(3, 3);              // pointer tip (top-left)
+        cursor.attackHotspot     = Vector2.zero;                   // (0,0) => auto-centered
+        cursor.attackMoveHotspot = Vector2.zero;
+        EditorUtility.SetDirty(cursor);
+
+        if (cursor.defaultCursor == null)
+            Debug.LogWarning("[unwritten] Cursor textures not found under " + CursorDir +
+                             " — the default OS cursor will be used. Check the KenneyCursorPack import.");
+    }
+
+    static Texture2D LoadCursorTex(string name)
+        => AssetDatabase.LoadAssetAtPath<Texture2D>($"{CursorDir}/{name}.png");
 
     [MenuItem("Tools/unwritten/Setup Mouse Combat")]
     static void SetupMouseCombat()
@@ -179,6 +239,44 @@ public static class MonsterBuilder
         string msg = EnsurePlayerCombat(pc);
         Selection.activeGameObject = pc.gameObject;
         Debug.Log("[unwritten] Setup Mouse Combat ✓ —" + msg);
+    }
+
+    /// <summary>Drops a stationary friendly unit ("Ally (test)") next to the player so the
+    /// new right-click-to-FOLLOW behavior is verifiable in single-player. It has a
+    /// <see cref="FriendlyUnit"/> marker but no <see cref="MonsterAI"/>, so a right-click
+    /// follows it (never attacks). Drag it around during Play to watch the player follow.</summary>
+    [MenuItem("Tools/unwritten/Add Test Ally")]
+    static void AddTestAlly()
+    {
+        var pc = Object.FindFirstObjectByType<PlayerController2D>();
+        if (pc == null)
+        {
+            EditorUtility.DisplayDialog("Add Test Ally",
+                "No Player in the scene. Build it first: Tools ▸ unwritten ▸ Build Player from selected SpriteSheet.",
+                "OK");
+            return;
+        }
+
+        var go = new GameObject("Ally (test)");
+        go.transform.position = NearPlayer(pc, 2.5f);
+
+        var sr = go.AddComponent<SpriteRenderer>();
+        sr.sprite = SpriteFactory.Solid(new Color(0.45f, 0.70f, 1f));   // friendly blue
+        sr.sortingOrder = 9;
+
+        var rb = go.AddComponent<Rigidbody2D>();
+        rb.gravityScale = 0f;
+        rb.freezeRotation = true;
+        rb.bodyType = RigidbodyType2D.Kinematic;   // stands still but still blocks & is clickable
+
+        go.AddComponent<BoxCollider2D>().size = Vector2.one * 0.8f;
+        go.AddComponent<FriendlyUnit>();
+
+        Undo.RegisterCreatedObjectUndo(go, "Add Test Ally");
+        EditorSceneManager.MarkSceneDirty(go.scene);
+        Selection.activeGameObject = go;
+        Debug.Log("[unwritten] Added 'Ally (test)' (blue). Press Play, then RIGHT-CLICK it to follow " +
+                  "(drag it in the Scene/Hierarchy during Play to see the player trail it).");
     }
 
     static void EnsureFolder(string path)

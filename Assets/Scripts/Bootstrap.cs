@@ -122,6 +122,9 @@ public class Bootstrap : MonoBehaviour
 
         go.AddComponent<BoxCollider2D>();
         go.AddComponent<PlayerController2D>();
+        // Click-to-move for the placeholder box too (pulls in PlayerAttacker via RequireComponent).
+        // The real animated player also gets a GameCursor via Tools ▸ unwritten ▸ Setup Mouse Combat.
+        go.AddComponent<PlayerCommander>();
         return go;
     }
 

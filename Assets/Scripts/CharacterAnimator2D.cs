@@ -7,6 +7,11 @@ using UnityEngine;
 /// however they move. Assign the sliced walk frames per direction in the
 /// Inspector; idle shows the first frame of the last-faced direction.
 ///
+/// Optionally assign an <see cref="attackSheet"/> (a 4-column Down/Up/Left/Right
+/// attack-pose strip, e.g. SeparateAnim/Attack.png). When <see cref="PlayAttack"/>
+/// is called the character snaps to face the target and holds the attack pose for
+/// a moment, then returns to walking — so swings don't look static.
+///
 /// Deliberately NOT an AnimatorController/blend tree: for plain 2D walk cycles
 /// this is far less wiring and trivially reused. Swap to an Animator later if you
 /// need animation events or complex transitions.
@@ -26,16 +31,34 @@ public class CharacterAnimator2D : MonoBehaviour
     [Tooltip("Below this speed (world units/sec) the character is treated as idle.")]
     public float moveThreshold = 0.05f;
 
+    [Header("Attack pose (optional)")]
+    [Tooltip("4-column Down/Up/Left/Right attack-pose strip (e.g. SeparateAnim/Attack.png). Leave empty for none.")]
+    public Texture2D attackSheet;
+    [Tooltip("Cell size (px) of the attack strip — Ninja Adventure characters are 16.")]
+    public int attackCell = 16;
+
     SpriteRenderer sr;
     Vector3 lastPos;
     Vector2 facing = Vector2.down;   // start facing the camera
     float timer;
     int frame;
 
+    Sprite[] attackPoses;            // [0]=down [1]=up [2]=left [3]=right
+    float attackUntil;
+
     void Awake()
     {
         sr = GetComponent<SpriteRenderer>();
         lastPos = transform.position;
+        BuildAttackPoses();
+    }
+
+    /// <summary>Snap to face <paramref name="dir"/> and hold the attack pose briefly.</summary>
+    public void PlayAttack(Vector2 dir, float holdSeconds)
+    {
+        if (attackPoses == null) return;
+        if (dir.sqrMagnitude > 1e-4f) facing = SnapDir(dir);
+        attackUntil = Time.time + holdSeconds;
     }
 
     void Update()
@@ -44,11 +67,15 @@ public class CharacterAnimator2D : MonoBehaviour
         Vector2 vel = (transform.position - lastPos) / Mathf.Max(Time.deltaTime, 1e-5f);
         lastPos = transform.position;
 
+        // Holding an attack pose: show it for the faced direction and skip walking.
+        if (attackPoses != null && Time.time < attackUntil)
+        {
+            sr.sprite = attackPoses[DirIndex(facing)];
+            return;
+        }
+
         bool moving = vel.sqrMagnitude > moveThreshold * moveThreshold;
-        if (moving)
-            facing = Mathf.Abs(vel.x) > Mathf.Abs(vel.y)
-                ? new Vector2(Mathf.Sign(vel.x), 0f)
-                : new Vector2(0f, Mathf.Sign(vel.y));
+        if (moving) facing = SnapDir(vel);
 
         var clip = ClipFor(facing);
         if (clip == null || clip.Length == 0) return;
@@ -72,6 +99,17 @@ public class CharacterAnimator2D : MonoBehaviour
         sr.sprite = clip[Mathf.Min(frame, clip.Length - 1)];
     }
 
+    void BuildAttackPoses()
+    {
+        if (attackSheet == null || attackCell <= 0) return;
+        int cols = Mathf.Max(1, attackSheet.width / attackCell);
+        attackPoses = new Sprite[4];
+        for (int i = 0; i < 4 && i < cols; i++)
+            attackPoses[i] = Sprite.Create(attackSheet,
+                new Rect(i * attackCell, 0, attackCell, attackCell),
+                new Vector2(0.5f, 0.5f), attackCell);   // pivot centre, ppu = cell → 1 unit, matches walk
+    }
+
     Sprite[] ClipFor(Vector2 dir)
     {
         if (dir.y > 0f) return up;
@@ -79,4 +117,16 @@ public class CharacterAnimator2D : MonoBehaviour
         if (dir.x < 0f) return left;
         return right;
     }
+
+    // Column order in the sheets: 0 = down, 1 = up, 2 = left, 3 = right.
+    static int DirIndex(Vector2 d)
+    {
+        if (d.y > 0f) return 1;
+        if (d.y < 0f) return 0;
+        if (d.x < 0f) return 2;
+        return 3;
+    }
+
+    static Vector2 SnapDir(Vector2 v)
+        => Mathf.Abs(v.x) > Mathf.Abs(v.y) ? new Vector2(Mathf.Sign(v.x), 0f) : new Vector2(0f, Mathf.Sign(v.y));
 }

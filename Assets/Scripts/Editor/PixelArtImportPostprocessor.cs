@@ -21,10 +21,29 @@ public class PixelArtImportPostprocessor : AssetPostprocessor
 
     void OnPreprocessTexture()
     {
+        string path = assetPath.Replace('\\', '/');
+
         // Only touch the art folder; leave UI/editor/imported-package textures alone.
-        if (!assetPath.Replace('\\', '/').Contains("/Art/")) return;
+        if (!path.Contains("/Art/")) return;
 
         var importer = (TextureImporter)assetImporter;
+
+        // Kenney Cursor Pack: import as readable, uncompressed Cursor textures so
+        // Cursor.SetCursor() (GameCursor) gets a clean Texture2D. NOT sprites — the
+        // hardware cursor needs the raw texture with its alpha preserved.
+        if (path.Contains("/KenneyCursorPack/"))
+        {
+            importer.textureType = TextureImporterType.Cursor;
+            importer.filterMode = FilterMode.Point;
+            importer.textureCompression = TextureImporterCompression.Uncompressed;
+            importer.mipmapEnabled = false;
+            importer.isReadable = true;
+            importer.alphaIsTransparency = true;
+            importer.npotScale = TextureImporterNPOTScale.None;
+            importer.wrapMode = TextureWrapMode.Clamp;
+            return;
+        }
+
         importer.textureType = TextureImporterType.Sprite;
         importer.spritePixelsPerUnit = PixelsPerUnit;
         importer.filterMode = FilterMode.Point;                       // crisp, no blur
