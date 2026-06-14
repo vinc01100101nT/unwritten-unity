@@ -3,13 +3,18 @@ using UnityEngine;
 /// <summary>
 /// Minimal top-down enemy brain. It wanders near its spawn point, then CHASES the
 /// player once they come within <see cref="aggroRadius"/>, and gives up (returns
-/// to wandering) once they get past <see cref="leashRadius"/>. Movement is via
-/// Rigidbody2D.MovePosition so it collides with walls/obstacles, and the existing
-/// <see cref="CharacterAnimator2D"/> animates it automatically from its motion.
+/// to wandering) once they get past <see cref="leashRadius"/>.
+///
+/// Movement is delegated to a <see cref="PathAgent"/> sibling, so the monster now routes
+/// AROUND walls and crates to reach the player instead of grinding into them. This class
+/// is pure brain: senses + decisions; the agent does the walking (and the existing
+/// <see cref="CharacterAnimator2D"/> animates it from that motion). A PathAgent is
+/// required and auto-added if missing, so older monster prefabs gain routing without a rebuild.
 ///
 /// The player is found by its <see cref="PlayerController2D"/>, so no tags needed.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
+[RequireComponent(typeof(PathAgent))]
 public class MonsterAI : MonoBehaviour
 {
     [Header("Movement")]
@@ -38,7 +43,14 @@ public class MonsterAI : MonoBehaviour
     [Tooltip("Seconds between contact hits.")]
     public float touchInterval = 1f;
 
+    // Monsters share a physics layer that ignores ITSELF, so a pack passes THROUGH each other
+    // (no hard pile-ups / jitter) while still colliding with walls and the player. The layer
+    // index is used directly, so there's no manual layer naming to do.
+    const int CrowdLayer = 8;
+    static bool crowdLayerReady;
+
     Rigidbody2D rb;
+    PathAgent agent;
     Transform player;
     Vector2 home;
     Vector2 wanderTarget;
@@ -49,19 +61,43 @@ public class MonsterAI : MonoBehaviour
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
+        agent = GetComponent<PathAgent>();
+        if (agent == null) { agent = gameObject.AddComponent<PathAgent>(); agent.agentRadius = 0.35f; }
+
+        // Pass through other monsters (still collide with walls + the player).
+        gameObject.layer = CrowdLayer;
+        if (!crowdLayerReady) { Physics2D.IgnoreLayerCollision(CrowdLayer, CrowdLayer, true); crowdLayerReady = true; }
+
         home = rb.position;
         wanderTarget = home;
     }
 
     void Start()
     {
+        agent.moveSpeed = moveSpeed;   // the routing mover walks at our speed
+        agent.avoidStrength = 0.9f;    // gentle spread; pass-through (Awake) prevents hard pile-ups
+        agent.avoidRadius = 0.8f;      // ~ a monster's body, so they spread only when actually close
+
         var pc = FindFirstObjectByType<PlayerController2D>();
-        if (pc != null) player = pc.transform;
+        if (pc != null)
+        {
+            player = pc.transform;
+            // Don't shove the player around: stop this monster's body from colliding with the
+            // player's. Mobs still surround and deal (distance-based) touch damage — they just
+            // can't physically push the player.
+            var myCol = GetComponent<Collider2D>();
+            var playerCol = pc.GetComponent<Collider2D>();
+            if (myCol != null && playerCol != null) Physics2D.IgnoreCollision(myCol, playerCol, true);
+        }
+        agent.avoidIgnore = player;   // dodge other monsters, but NOT our target — so we can still reach the player
 
         // Award XP to the character when this monster dies.
         var health = GetComponent<Health>();
         if (health != null)
             health.onDeath.AddListener(() => { if (Character.Instance != null) Character.Instance.AddXP(xpReward); });
+
+        // Stagger the first wander pick so a freshly-spawned pack doesn't all route on one frame.
+        nextWanderTime = Time.time + Random.value;
     }
 
     void FixedUpdate()
@@ -70,6 +106,7 @@ public class MonsterAI : MonoBehaviour
         float toPlayer = player != null ? Vector2.Distance(pos, player.position) : Mathf.Infinity;
 
         // Aggro / leash transitions.
+        bool wasChasing = chasing;
         if (chasing && toPlayer > leashRadius) chasing = false;
         else if (!chasing && toPlayer <= aggroRadius) chasing = true;
 
@@ -81,29 +118,25 @@ public class MonsterAI : MonoBehaviour
             nextTouch = Time.time + touchInterval;
         }
 
-        Vector2 dir = chasing ? ChaseDir(pos, toPlayer) : WanderDir(pos);
-        if (dir != Vector2.zero)
-            rb.MovePosition(pos + dir * (moveSpeed * Time.fixedDeltaTime));
-    }
-
-    Vector2 ChaseDir(Vector2 pos, float toPlayer)
-    {
-        if (player == null || toPlayer <= stopDistance) return Vector2.zero;
-        return ((Vector2)player.position - pos).normalized;
-    }
-
-    Vector2 WanderDir(Vector2 pos)
-    {
-        if (Vector2.Distance(pos, wanderTarget) > 0.15f)
-            return (wanderTarget - pos).normalized;
-
-        // Reached the target — pause, then pick a new one near home.
-        if (Time.time >= nextWanderTime)
+        if (chasing)
         {
-            wanderTarget = home + Random.insideUnitCircle * wanderRadius;
-            nextWanderTime = Time.time + Random.Range(wanderPauseMin, wanderPauseMax);
+            // Hold at stopDistance so we don't pile onto the player; otherwise close in. Spreading
+            // around the player now comes from pass-through + avoidance, not a special target point.
+            if (toPlayer <= stopDistance) agent.Halt();
+            else agent.MoveToward(player.position);
         }
-        return Vector2.zero;
+        else
+        {
+            if (wasChasing) { agent.Halt(); nextWanderTime = Time.time; }   // just leashed off → resume wandering now
+
+            // Idle until the pause elapses, then pick a fresh point near home and route there.
+            if (agent.Arrived && Time.time >= nextWanderTime)
+            {
+                wanderTarget = home + Random.insideUnitCircle * wanderRadius;
+                agent.MoveTo(wanderTarget);
+                nextWanderTime = Time.time + Random.Range(wanderPauseMin, wanderPauseMax);
+            }
+        }
     }
 
     void OnDrawGizmosSelected()

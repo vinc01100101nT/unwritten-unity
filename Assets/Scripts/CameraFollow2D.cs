@@ -23,6 +23,16 @@ public class CameraFollow2D : MonoBehaviour
     void Awake()
     {
         cam = GetComponent<Camera>();
+
+        // DYNAMIC top-down depth ("z-index"): sort all transparent renderers — sprites AND
+        // Individual-mode tilemap tiles — by their Y position, so whatever is LOWER on screen
+        // (nearer the camera) draws IN FRONT, and whatever is higher draws BEHIND. This is what
+        // lets the player slip behind a tree that's below them and in front of one that's above,
+        // and lets mobs occlude each other correctly — every frame, with no per-object script.
+        // (Requires the sorted objects to share a sorting layer + order; see "Setup Y-Depth
+        // Sorting" — Y is only the tiebreaker WITHIN one order.)
+        cam.transparencySortMode = TransparencySortMode.CustomAxis;
+        cam.transparencySortAxis = new Vector3(0f, 1f, 0f);
     }
 
     void LateUpdate()

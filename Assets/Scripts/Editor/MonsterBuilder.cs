@@ -118,7 +118,7 @@ public static class MonsterBuilder
         var go = new GameObject("Monster_" + tex.name);
 
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sortingOrder = 9;          // NPC band, just under the player (10)
+        sr.sortingOrder = 0;          // shared "units" band — depth is by Y (transparency axis), not a fixed order
         sr.sprite = frames[0];
 
         var rb = go.AddComponent<Rigidbody2D>();
@@ -133,6 +133,10 @@ public static class MonsterBuilder
         // Phase F: give monsters enough HP that a few swings are needed (player base ATK 4).
         go.AddComponent<Health>().maxHealth = 12;
         go.AddComponent<MonsterAI>();
+        // MonsterAI's [RequireComponent(PathAgent)] already added the agent — fetch it, don't add a 2nd.
+        var agent = go.GetComponent<PathAgent>() ?? go.AddComponent<PathAgent>();
+        agent.agentRadius = 0.35f;                   // ≈ half the 0.7 body — keep clear of walls
+        go.AddComponent<YDepthSorter>();             // per-object draw order by feet (occlude / be occluded)
 
         if (cols >= 4 && walk >= 1)
         {
@@ -165,6 +169,12 @@ public static class MonsterBuilder
         atk.cooldown = 0.6f;
         atk.windupTime = 0.18f;   // damage lands at the end of this window, so S can cancel it
 
+        // Smart pathfinding: route the player around walls on right-click move / attack / follow.
+        var agent = pc.GetComponent<PathAgent>();
+        if (agent == null) agent = Undo.AddComponent<PathAgent>(pc.gameObject);
+        agent.agentRadius = 0.4f;
+        EditorUtility.SetDirty(agent);
+
         // Slash FX strip shown on each swing.
         var slash = AssetDatabase.LoadAssetAtPath<Texture2D>(SlashFxPath);
         if (slash != null) atk.slashSheet = slash;
@@ -193,7 +203,8 @@ public static class MonsterBuilder
 
         string fx = (slash != null ? " slash FX" : "") + (pose ? (slash != null ? " +" : "") + " attack pose" : "");
         return (added ? " Added Dota-style combat to the Player" : " Player combat ready") +
-               " (right-click move/attack/follow, A+click attack-move, S stop" + (fx.Length > 0 ? ";" + fx + " wired" : "") + ").";
+               " (right-click move/attack/follow, A+click attack-move, S stop; smart pathfinding" +
+               (fx.Length > 0 ? ";" + fx : "") + " wired).";
     }
 
     const string CursorDir = "Assets/Art/KenneyCursorPack/PNG/Outline/Default";
@@ -239,44 +250,6 @@ public static class MonsterBuilder
         string msg = EnsurePlayerCombat(pc);
         Selection.activeGameObject = pc.gameObject;
         Debug.Log("[unwritten] Setup Mouse Combat ✓ —" + msg);
-    }
-
-    /// <summary>Drops a stationary friendly unit ("Ally (test)") next to the player so the
-    /// new right-click-to-FOLLOW behavior is verifiable in single-player. It has a
-    /// <see cref="FriendlyUnit"/> marker but no <see cref="MonsterAI"/>, so a right-click
-    /// follows it (never attacks). Drag it around during Play to watch the player follow.</summary>
-    [MenuItem("Tools/unwritten/Add Test Ally")]
-    static void AddTestAlly()
-    {
-        var pc = Object.FindFirstObjectByType<PlayerController2D>();
-        if (pc == null)
-        {
-            EditorUtility.DisplayDialog("Add Test Ally",
-                "No Player in the scene. Build it first: Tools ▸ unwritten ▸ Build Player from selected SpriteSheet.",
-                "OK");
-            return;
-        }
-
-        var go = new GameObject("Ally (test)");
-        go.transform.position = NearPlayer(pc, 2.5f);
-
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = SpriteFactory.Solid(new Color(0.45f, 0.70f, 1f));   // friendly blue
-        sr.sortingOrder = 9;
-
-        var rb = go.AddComponent<Rigidbody2D>();
-        rb.gravityScale = 0f;
-        rb.freezeRotation = true;
-        rb.bodyType = RigidbodyType2D.Kinematic;   // stands still but still blocks & is clickable
-
-        go.AddComponent<BoxCollider2D>().size = Vector2.one * 0.8f;
-        go.AddComponent<FriendlyUnit>();
-
-        Undo.RegisterCreatedObjectUndo(go, "Add Test Ally");
-        EditorSceneManager.MarkSceneDirty(go.scene);
-        Selection.activeGameObject = go;
-        Debug.Log("[unwritten] Added 'Ally (test)' (blue). Press Play, then RIGHT-CLICK it to follow " +
-                  "(drag it in the Scene/Hierarchy during Play to see the player trail it).");
     }
 
     static void EnsureFolder(string path)

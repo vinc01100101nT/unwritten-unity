@@ -131,7 +131,7 @@ public static class WorldTools
 
         var go = new GameObject("NPC");
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sortingOrder = 9;                       // just under the player (10)
+        sr.sortingOrder = 0;                       // shared "units" band — depth is by Y (transparency axis)
         if (sprite != null) sr.sprite = sprite;
 
         var box = go.AddComponent<BoxCollider2D>();

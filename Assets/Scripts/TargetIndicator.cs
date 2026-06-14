@@ -22,7 +22,7 @@ public class TargetIndicator : MonoBehaviour
         var ind = go.AddComponent<TargetIndicator>();
         ind.sr = go.AddComponent<SpriteRenderer>();
         ind.sr.sprite = BuildArrow();
-        ind.sr.sortingOrder = 50;               // above the player/monster bands
+        ind.sr.sortingOrder = DepthSortRuntime.FxTarget;   // FX band: above all entities + overhead
         go.transform.localScale = Vector3.one * 0.6f;
         go.SetActive(false);
         return ind;

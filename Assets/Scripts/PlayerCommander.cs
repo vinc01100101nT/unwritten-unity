@@ -17,7 +17,8 @@ using UnityEngine;
 ///                             an in-flight swing's damage. Also fires <see cref="onStop"/>
 ///                             so a future skill caster can abort its cast here.
 ///
-/// Pathfinding is deferred: chasing/moving is straight-line; walls are handled by physics.
+/// Movement is routed: the sibling <see cref="PlayerController2D"/> delegates to a
+/// <see cref="PathAgent"/>, so moves/chases automatically path AROUND walls and crates.
 /// </summary>
 [RequireComponent(typeof(PlayerController2D))]
 [RequireComponent(typeof(PlayerAttacker))]
@@ -50,6 +51,7 @@ public class PlayerCommander : MonoBehaviour
 
     PlayerController2D move;
     PlayerAttacker attacker;
+    PathAgent agent;
     TargetIndicator indicator;
     Camera cam;
 
@@ -178,6 +180,7 @@ public class PlayerCommander : MonoBehaviour
         attackTarget = enemy;
         resumeAttackMove = resume;  // keep movePoint when this came from an attack-move
         ShowIndicator(enemy.transform);
+        SetAvoid(enemy.transform);  // don't dodge the unit we're trying to hit
     }
 
     void BeginFollow(Transform ally)
@@ -185,6 +188,7 @@ public class PlayerCommander : MonoBehaviour
         ClearCombat();
         order = Order.Follow;
         followTarget = ally;
+        SetAvoid(ally);             // flow toward the ally without dodging it
     }
 
     /// <summary>Stop and cancel everything (S). Damage from an in-flight swing is dropped.</summary>
@@ -211,6 +215,14 @@ public class PlayerCommander : MonoBehaviour
         followTarget = null;
         resumeAttackMove = false;
         ShowIndicator(null);
+        SetAvoid(null);             // clear the attack-target exemption (player avoidance is off anyway)
+    }
+
+    // Tell the mover which unit (if any) NOT to steer around — its current target.
+    void SetAvoid(Transform target)
+    {
+        if (agent == null) agent = GetComponent<PathAgent>();
+        if (agent != null) agent.avoidIgnore = target;
     }
 
     // ---- helpers -------------------------------------------------------------

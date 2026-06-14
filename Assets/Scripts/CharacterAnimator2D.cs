@@ -49,6 +49,9 @@ public class CharacterAnimator2D : MonoBehaviour
     void Awake()
     {
         sr = GetComponent<SpriteRenderer>();
+        // Give this character per-object Y-depth so it occludes / is occluded by others purely by
+        // screen position — covers monsters spawned at runtime (their prefab has no sorter yet).
+        DepthSortRuntime.EnsureUnitSorter(sr);
         lastPos = transform.position;
         BuildAttackPoses();
     }

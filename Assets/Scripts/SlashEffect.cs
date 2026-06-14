@@ -15,7 +15,7 @@ public class SlashEffect : MonoBehaviour
         go.transform.position = worldPos;
         go.transform.localScale = Vector3.one * Mathf.Max(0.01f, scale);
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sortingOrder = 40;                       // above monsters, below the target arrow (50)
+        sr.sortingOrder = DepthSortRuntime.FxSlash;   // FX band: above all entities + overhead
         go.AddComponent<SlashEffect>().Init(sheet, frameSize, frameCount, fps, sr);
     }
 

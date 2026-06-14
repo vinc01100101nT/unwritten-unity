@@ -40,7 +40,7 @@ public class DamagePopup : MonoBehaviour
 
         var canvas = go.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
-        canvas.sortingOrder = 100;                        // draw above the sprites
+        canvas.sortingOrder = DepthSortRuntime.FxPopup;   // FX band: above all entities + overhead
         ((RectTransform)go.transform).sizeDelta = new Vector2(100, 40);
 
         var t = go.AddComponent<Text>();

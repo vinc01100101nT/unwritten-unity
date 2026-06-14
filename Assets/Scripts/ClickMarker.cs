@@ -21,7 +21,7 @@ public class ClickMarker : MonoBehaviour
         var sr = go.AddComponent<SpriteRenderer>();
         sr.sprite = Ring();
         sr.color = color;
-        sr.sortingOrder = 45;                       // above the floor/monsters, below the target arrow (50)
+        sr.sortingOrder = DepthSortRuntime.FxClickMarker;   // FX band: above all entities + overhead
         go.AddComponent<ClickMarker>().sr = sr;
     }
 

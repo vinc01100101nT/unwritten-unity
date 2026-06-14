@@ -59,7 +59,7 @@ public static class PlayerBuilder
         var go = new GameObject("Player");
 
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sortingOrder = 10;
+        sr.sortingOrder = 0;     // shared "units" band — depth comes from the Y transparency axis, not a fixed order
         sr.sprite = frames[0];   // set the sprite BEFORE adding the collider (auto-size reads it)
 
         var rb = go.AddComponent<Rigidbody2D>();
@@ -71,7 +71,9 @@ public static class PlayerBuilder
         var box = go.AddComponent<BoxCollider2D>();
         box.size = Vector2.one * 0.8f;   // explicit, slightly inset — never rely on auto-size being non-zero
         go.AddComponent<PlayerController2D>();
+        go.AddComponent<PathAgent>();          // smart pathfinding (routes around walls)
         go.AddComponent<PlayerInteractor>();   // lets the player talk to NPCs / use portals
+        go.AddComponent<YDepthSorter>();       // per-object draw order by feet (occlude / be occluded)
 
         // One column = one facing. Take the top `walk` rows of each column.
         Sprite[] Column(int c) =>

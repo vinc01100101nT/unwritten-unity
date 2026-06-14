@@ -49,6 +49,11 @@ public class Bootstrap : MonoBehaviour
         if (buildArena) cam.orthographicSize = arenaHeight * 0.6f;  // only drive zoom for the procedural arena
         cam.backgroundColor = new Color(0.05f, 0.06f, 0.09f);
         cam.transform.position = new Vector3(0f, 0f, -10f);
+
+        // Dynamic top-down depth: sort transparent renderers by Y (lower on screen = in front).
+        // Set here too so it's live from the very first frame, even before CameraFollow2D attaches.
+        cam.transparencySortMode = TransparencySortMode.CustomAxis;
+        cam.transparencySortAxis = new Vector3(0f, 1f, 0f);
     }
 
     void BuildArena()
@@ -69,7 +74,9 @@ public class Bootstrap : MonoBehaviour
             for (int y = -halfH; y < halfH; y++)
             {
                 var c = ((x + y) & 1) == 0 ? floorA : floorB;
-                var tile = MakeSprite($"Floor_{x}_{y}", c, new Vector3(x + 0.5f, y + 0.5f, 0f), 0);
+                // Floor sits behind everyone (-100); walls/crates/player share order 0 and
+                // Y-sort against each other via the camera's transparency axis.
+                var tile = MakeSprite($"Floor_{x}_{y}", c, new Vector3(x + 0.5f, y + 0.5f, 0f), -100);
                 tile.transform.SetParent(floorRoot);
             }
         }
@@ -97,7 +104,7 @@ public class Bootstrap : MonoBehaviour
                 0f);
             if (pos.magnitude < 2f) continue;
 
-            var crate = MakeSprite($"Crate_{i}", crateColor, pos, 1);
+            var crate = MakeSprite($"Crate_{i}", crateColor, pos, 0);
             crate.AddComponent<BoxCollider2D>();
             crate.transform.SetParent(crateRoot);
         }
@@ -105,14 +112,14 @@ public class Bootstrap : MonoBehaviour
 
     void SpawnWall(Vector3 pos, Color color, Transform parent)
     {
-        var go = MakeSprite("Wall", color, pos, 1);
+        var go = MakeSprite("Wall", color, pos, 0);
         go.AddComponent<BoxCollider2D>();
         go.transform.SetParent(parent);
     }
 
     GameObject SpawnPlayer(Vector2 pos)
     {
-        var go = MakeSprite("Player", new Color(1f, 0.80f, 0.30f), new Vector3(pos.x, pos.y, 0f), 10);
+        var go = MakeSprite("Player", new Color(1f, 0.80f, 0.30f), new Vector3(pos.x, pos.y, 0f), 0);
 
         var rb = go.AddComponent<Rigidbody2D>();
         rb.gravityScale = 0f;
@@ -122,6 +129,7 @@ public class Bootstrap : MonoBehaviour
 
         go.AddComponent<BoxCollider2D>();
         go.AddComponent<PlayerController2D>();
+        go.AddComponent<PathAgent>();          // smart routing around walls/crates
         // Click-to-move for the placeholder box too (pulls in PlayerAttacker via RequireComponent).
         // The real animated player also gets a GameCursor via Tools ▸ unwritten ▸ Setup Mouse Combat.
         go.AddComponent<PlayerCommander>();
