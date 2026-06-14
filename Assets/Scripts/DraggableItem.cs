@@ -33,6 +33,9 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
     public void OnBeginDrag(PointerEventData e)
     {
         if (!CanDrag) return;
+        ItemTooltip.Suppressed = true;          // no tooltips popping while we drag over slots
+        ItemTooltip.HideTip();
+        ItemSlot.HighlightAcceptingEquip(slot.Item);   // glow the slots this fits
         rt.SetParent(canvas.transform, true);   // float above the panels
         rt.SetAsLastSibling();
         cg.blocksRaycasts = false;              // let the slot underneath receive the drop
@@ -46,6 +49,8 @@ public class DraggableItem : MonoBehaviour, IBeginDragHandler, IDragHandler, IEn
 
     public void OnEndDrag(PointerEventData e)
     {
+        ItemTooltip.Suppressed = false;
+        ItemSlot.ClearHighlights();
         cg.blocksRaycasts = true;
         rt.SetParent(slot.transform, false);    // snap home; data already moved via OnDrop
         rt.anchorMin = aMin; rt.anchorMax = aMax; rt.pivot = pivot;

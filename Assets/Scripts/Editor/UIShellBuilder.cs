@@ -47,7 +47,9 @@ public static class UIShellBuilder
     /// frame scale (= CanvasScaler.referencePixelsPerUnit; lower → chunkier).</summary>
     public static void Build(string themeFolder, int refPixelsPerUnit)
     {
-        uiFont      = AssetDatabase.LoadAssetAtPath<Font>(FontPath);
+        // The pack's NormalFont.ttf is a pixel font that renders blurry when scaled and
+        // collapses spaces ("Leather Vest" -> "LeatherVest"); use the crisp built-in font.
+        uiFont      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         panelSprite = SlicedSprite(themeFolder + "/nine_path_panel.png", new Vector4(6, 6, 6, 6));
         cellSprite  = SlicedSprite(FirstExisting(themeFolder + "/inventory_cell.png", WOOD + "/inventory_cell.png"), new Vector4(3, 3, 3, 3));
         barBgSprite = SlicedSprite(FirstExisting(themeFolder + "/nine_path_bg.png",    WOOD + "/nine_path_bg.png"),    new Vector4(2, 2, 2, 2));
@@ -77,6 +79,8 @@ public static class UIShellBuilder
         var bag    = BuildBagPanel(root);
         var chr    = BuildCharacterPanel(root);
         var skills = BuildSkillsPanel(root);
+        BuildTooltip(root);       // on top of every panel
+        BuildCombatCursor(root);  // the sword pointer — the very topmost child
 
         var toggle = canvasGO.AddComponent<PanelToggle>();
         toggle.panels = new[]
@@ -86,7 +90,9 @@ public static class UIShellBuilder
             new PanelToggle.Binding { name = "Skills",    key = KeyCode.K, panel = skills },
         };
 
-        canvasGO.AddComponent<PersistentUI>();   // survives scene loads (singleton)
+        canvasGO.AddComponent<PersistentUI>();        // survives scene loads (singleton)
+        canvasGO.AddComponent<CharacterUIBinder>();   // drives HUD/stats/equip from Character
+        canvasGO.AddComponent<BagSeeder>();           // fills the bag from Resources at runtime
 
         Undo.RegisterCreatedObjectUndo(canvasGO, "Build UI Shell");
 
@@ -132,7 +138,12 @@ public static class UIShellBuilder
         Anchor(bar.rectTransform, Vector2.zero, Vector2.zero, Vector2.zero);
         bar.rectTransform.anchoredPosition = new Vector2(16, 16);
         bar.rectTransform.sizeDelta = new Vector2(240, 28);
+        // Filled image so CharacterUIBinder can drive fillAmount (needs a sprite + Filled type).
         var fill = NewColor("Fill", bar.transform, new Color(0.80f, 0.20f, 0.22f, 1f));
+        fill.sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        fill.type = Image.Type.Filled;
+        fill.fillMethod = Image.FillMethod.Horizontal;
+        fill.fillOrigin = (int)Image.OriginHorizontal.Left;
         Fill(fill.rectTransform, new Vector2(4, 4), new Vector2(-4, -4));
         var hp = NewText("Label", bar.transform, "HP", 16, FontStyle.Bold, TextAnchor.MiddleCenter, true);
         Fill(hp.rectTransform, Vector2.zero, Vector2.zero);
@@ -160,12 +171,9 @@ public static class UIShellBuilder
         grid.spacing = new Vector2(6, 6);
         grid.padding = new RectOffset(2, 2, 2, 2);
 
-        var items = ItemStarterSet.EnsureStarterItems();   // seed the bag with demo gear
-        for (int i = 0; i < 24; i++)
-        {
-            var slot = MakeItemSlot(NewSliced("Slot", content, cellSprite), EquipSlotType.None, null);
-            if (i < items.Count) slot.SetItem(items[i]);
-        }
+        ItemStarterSet.EnsureStarterItems();   // make sure the starter assets exist (in Resources)
+        for (int i = 0; i < 24; i++)           // slots are built empty; BagSeeder fills them at runtime
+            MakeItemSlot(NewSliced("Slot", content, cellSprite), EquipSlotType.None, null);
         return content.parent.gameObject;
     }
 
@@ -219,6 +227,66 @@ public static class UIShellBuilder
 
         var t = NewText("Label", row.transform, label, 16, FontStyle.Normal, TextAnchor.MiddleLeft, true);
         Fill(t.rectTransform, new Vector2(50, 0), new Vector2(-4, 0));
+    }
+
+    // The sword "attack" pointer (CombatCursor shows/hides + moves it at runtime).
+    static void BuildCombatCursor(Transform canvas)
+    {
+        var sword = LoadSprite("Assets/Art/NinjaAdventure/Items/Weapons/Sword/Sprite.png");
+        var img = NewColor("CombatCursor", canvas, Color.white);
+        img.raycastTarget = false;
+        img.sprite = sword;
+        img.preserveAspect = true;
+        var rt = img.rectTransform;
+        rt.anchorMin = rt.anchorMax = Vector2.zero;   // positioned in screen pixels at runtime
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.sizeDelta = new Vector2(34, 40);
+        img.enabled = false;                          // hidden until the cursor is over an enemy
+
+        img.gameObject.AddComponent<CombatCursor>().icon = img;
+    }
+
+    static Sprite LoadSprite(string path)
+        => AssetDatabase.LoadAllAssetsAtPath(path).OfType<Sprite>().FirstOrDefault();
+
+    // A single shared item tooltip that follows the cursor (filled by ItemTooltip).
+    static void BuildTooltip(Transform canvas)
+    {
+        var panel = NewSliced("ItemTooltip", canvas, panelSprite);
+        var rt = panel.rectTransform;
+        rt.anchorMin = rt.anchorMax = new Vector2(0, 1);   // anchored top-left; ItemTooltip moves it
+        rt.pivot = new Vector2(0, 1);
+        rt.sizeDelta = new Vector2(240, 80);
+        panel.raycastTarget = false;
+
+        var cg = panel.gameObject.AddComponent<CanvasGroup>();
+        cg.blocksRaycasts = false;
+        cg.interactable = false;
+
+        var vlg = panel.gameObject.AddComponent<VerticalLayoutGroup>();
+        vlg.padding = new RectOffset(12, 12, 8, 10);
+        vlg.spacing = 1;
+        vlg.childControlWidth = vlg.childControlHeight = true;
+        vlg.childForceExpandWidth = true;
+        vlg.childForceExpandHeight = false;
+        vlg.childAlignment = TextAnchor.UpperLeft;
+
+        var fitter = panel.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;  // keep the fixed 240 width
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;    // grow tall enough for the text
+
+        var title = NewText("Title", panel.transform, "Item", 20, FontStyle.Bold, TextAnchor.UpperLeft, true);
+        title.raycastTarget = false;
+        var body = NewText("Body", panel.transform, "", 16, FontStyle.Normal, TextAnchor.UpperLeft, false);
+        body.raycastTarget = false;
+        body.supportRichText = true;
+
+        var tip = panel.gameObject.AddComponent<ItemTooltip>();
+        tip.panel = rt;
+        tip.titleText = title;
+        tip.bodyText = body;
+        // Stays ACTIVE (so ItemTooltip.Awake runs and registers Instance); it hides
+        // itself via the CanvasGroup alpha instead of being deactivated.
     }
 
     static GameObject BuildSkillsPanel(Transform canvas)

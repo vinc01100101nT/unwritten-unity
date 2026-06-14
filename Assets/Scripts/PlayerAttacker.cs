@@ -1,54 +1,90 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 /// <summary>
-/// A simple melee swing. Press the attack key (default J) to hit anything with a
-/// <see cref="Health"/> in a small circle just in front of the player, aimed by
-/// <see cref="PlayerController2D.Facing"/>. No combo/animation yet — Phase D just
-/// needs "attack → monster takes damage → dies".
+/// Mouse-target melee combat. Left-click a monster to make it your active target
+/// (a down-arrow marks it); while it's your target and within <see cref="range"/>
+/// you auto-swing at it every <see cref="cooldown"/> seconds for Character.Attack
+/// damage. SINGLE target only — clicking another monster switches target, clicking
+/// empty ground or pressing Esc clears it. (Hitting several enemies at once is
+/// being saved for a future Cleave skill in Phase G.)
 /// </summary>
 [RequireComponent(typeof(PlayerController2D))]
 public class PlayerAttacker : MonoBehaviour
 {
-    public KeyCode attackKey = KeyCode.J;
+    [Tooltip("How close (world units) you must be to land a hit on your target.")]
+    public float range = 1.4f;
+    [Tooltip("Seconds between auto-attacks on your target.")]
+    public float cooldown = 0.6f;
+    [Tooltip("Fallback damage if there's no Character yet; normally uses Character.Attack.")]
     public int damage = 1;
 
-    [Tooltip("How far in front of the player the swing reaches.")]
-    public float range = 0.9f;
-    [Tooltip("Radius of the swing's hit circle.")]
-    public float radius = 0.6f;
-    [Tooltip("Seconds between swings.")]
-    public float cooldown = 0.35f;
+    /// <summary>The monster currently being attacked (null = none).</summary>
+    public Health Target { get; private set; }
 
-    PlayerController2D controller;
-    float nextTime;
+    Camera cam;
+    float nextSwing;
+    TargetIndicator indicator;
 
-    void Awake() { controller = GetComponent<PlayerController2D>(); }
+    void Awake() => cam = Camera.main;
 
     void Update()
     {
-        if (Input.GetKeyDown(attackKey) && Time.time >= nextTime)
+        if (cam == null) cam = Camera.main;
+
+        // Pick / switch / clear target on left-click (clicks on the UI are ignored).
+        if (Input.GetMouseButtonDown(0) && !PointerOverUI())
+            SetTarget(MonsterUnderCursor(cam));      // null when you click empty ground
+
+        if (Input.GetKeyDown(KeyCode.Escape) && Target != null)
+            SetTarget(null);
+
+        // Forget a target that died or despawned.
+        if (Target == null || Target.IsDead) { if (Target != null) SetTarget(null); return; }
+
+        // Auto-attack while the target is in range.
+        if (Time.time >= nextSwing &&
+            Vector2.Distance(transform.position, Target.transform.position) <= range)
         {
-            nextTime = Time.time + cooldown;
-            Swing();
+            int power = Character.Instance != null ? Character.Instance.Attack : damage;
+            Target.TakeDamage(power);
+            nextSwing = Time.time + cooldown;
+            if (Target == null || Target.IsDead) SetTarget(null);   // it just died
         }
     }
 
-    void Swing()
+    void SetTarget(Health h)
     {
-        Vector2 origin = (Vector2)transform.position + controller.Facing * range;
-        foreach (var hit in Physics2D.OverlapCircleAll(origin, radius))
+        Target = h;
+        if (h != null && indicator == null) indicator = TargetIndicator.Create();
+        if (indicator != null) indicator.Follow(h != null ? h.transform : null);
+    }
+
+    // ---- shared mouse helpers (also used by CombatCursor) ---------------------
+
+    public static bool PointerOverUI()
+        => EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+
+    /// <summary>The closest living monster under the mouse cursor, or null.</summary>
+    public static Health MonsterUnderCursor(Camera cam)
+    {
+        if (cam == null) return null;
+        Vector2 w = cam.ScreenToWorldPoint(Input.mousePosition);
+        Health best = null;
+        float bestDist = float.MaxValue;
+        foreach (var c in Physics2D.OverlapCircleAll(w, 0.35f))
         {
-            if (hit.transform == transform) continue;          // never hit ourselves
-            var hp = hit.GetComponentInParent<Health>();        // monsters carry Health; walls/NPCs don't
-            if (hp != null && !hp.IsDead) hp.TakeDamage(damage);
+            var h = c.GetComponentInParent<Health>();
+            if (h == null || h.IsDead || h.GetComponent<MonsterAI>() == null) continue;
+            float d = Vector2.SqrMagnitude((Vector2)h.transform.position - w);
+            if (d < bestDist) { bestDist = d; best = h; }
         }
+        return best;
     }
 
     void OnDrawGizmosSelected()
     {
-        var c = GetComponent<PlayerController2D>();
-        Vector2 f = c != null ? c.Facing : Vector2.down;
-        Gizmos.color = new Color(1f, 0.9f, 0.3f, 0.5f);
-        Gizmos.DrawWireSphere((Vector2)transform.position + f * range, radius);
+        Gizmos.color = new Color(1f, 0.9f, 0.3f, 0.4f);
+        Gizmos.DrawWireSphere(transform.position, range);
     }
 }

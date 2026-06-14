@@ -9,7 +9,7 @@ using UnityEngine.UI;
 /// Dropping a <see cref="DraggableItem"/> here moves/swaps the item.
 /// </summary>
 [RequireComponent(typeof(Image))]
-public class ItemSlot : MonoBehaviour, IDropHandler
+public class ItemSlot : MonoBehaviour, IDropHandler, IPointerClickHandler, IPointerEnterHandler, IPointerExitHandler
 {
     [Tooltip("None = bag slot (holds any item). Otherwise only items of this type fit.")]
     public EquipSlotType accepts = EquipSlotType.None;
@@ -21,6 +21,10 @@ public class ItemSlot : MonoBehaviour, IDropHandler
 
     [SerializeField] Item item;                  // serialized so seeded gear survives into Play
     public Item Item => item;
+
+    /// <summary>Raised whenever the held item changes (drag/swap/consume). Equip slots
+    /// listen to push the new item into <see cref="Character"/>.</summary>
+    public event System.Action Changed;
 
     void Awake() => Refresh();
 
@@ -35,6 +39,7 @@ public class ItemSlot : MonoBehaviour, IDropHandler
     {
         item = newItem;
         Refresh();
+        Changed?.Invoke();
     }
 
     void Refresh()
@@ -65,6 +70,45 @@ public class ItemSlot : MonoBehaviour, IDropHandler
         if (dragged != null && dragged.slot != null) TryMove(dragged.slot, this);
     }
 
+    /// <summary>
+    /// Right-click does the obvious thing for what's under the cursor:
+    ///  • bag consumable → use it (heal, then remove);
+    ///  • bag equipment  → auto-equip into its matching slot;
+    ///  • equipped item   → unequip back to a free bag slot.
+    /// </summary>
+    public void OnPointerClick(PointerEventData e)
+    {
+        if (e.button != PointerEventData.InputButton.Right || item == null) return;
+
+        if (accepts == EquipSlotType.None)                      // a bag slot
+        {
+            if (item.healAmount > 0)                            // consumable → use
+            {
+                if (Character.Instance != null) Character.Instance.Heal(item.healAmount);
+                SetItem(null);
+            }
+            else if (item.slot != EquipSlotType.None)           // equipment → equip
+            {
+                var target = FindEquipSlot(item.slot);
+                if (target != null) TryMove(this, target);
+            }
+        }
+        else                                                    // an equip slot → unequip
+        {
+            var bag = FindEmptyBagSlot();
+            if (bag != null) TryMove(this, bag);
+        }
+        ItemTooltip.HideTip();   // whatever it described may have moved/vanished
+    }
+
+    /// <summary>Hovering a filled slot shows the item's details tooltip.</summary>
+    public void OnPointerEnter(PointerEventData e)
+    {
+        if (item != null) ItemTooltip.ShowFor(item);
+    }
+
+    public void OnPointerExit(PointerEventData e) => ItemTooltip.HideTip();
+
     /// <summary>Move (or swap) an item from one slot to another, honoring equip-type rules.</summary>
     public static bool TryMove(ItemSlot from, ItemSlot to)
     {
@@ -75,5 +119,46 @@ public class ItemSlot : MonoBehaviour, IDropHandler
         from.SetItem(b);                                   // b may be null (plain move)
         to.SetItem(a);
         return true;
+    }
+
+    // ---- highlighting + slot lookup (used while dragging / right-click equip) ----
+
+    static readonly Color HighlightColor = new Color(0.55f, 1f, 0.55f, 1f);
+
+    /// <summary>Tint this slot's frame to flag it as a valid drop target.</summary>
+    public void SetHighlight(bool on)
+    {
+        var bg = GetComponent<Image>();
+        if (bg != null) bg.color = on ? HighlightColor : Color.white;
+    }
+
+    static ItemSlot[] AllSlots() =>
+        Object.FindObjectsByType<ItemSlot>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+    /// <summary>Light up every equip slot that would accept this item (called on drag start).</summary>
+    public static void HighlightAcceptingEquip(Item dragged)
+    {
+        if (dragged == null || dragged.slot == EquipSlotType.None) return;
+        foreach (var s in AllSlots())
+            if (s.accepts == dragged.slot) s.SetHighlight(true);
+    }
+
+    public static void ClearHighlights()
+    {
+        foreach (var s in AllSlots()) s.SetHighlight(false);
+    }
+
+    static ItemSlot FindEquipSlot(EquipSlotType type)
+    {
+        foreach (var s in AllSlots())
+            if (s.accepts == type) return s;
+        return null;
+    }
+
+    static ItemSlot FindEmptyBagSlot()
+    {
+        foreach (var s in AllSlots())
+            if (s.accepts == EquipSlotType.None && s.Item == null) return s;
+        return null;
     }
 }

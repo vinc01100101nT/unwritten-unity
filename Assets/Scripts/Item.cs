@@ -4,9 +4,10 @@ using UnityEngine;
 public enum EquipSlotType { None, Head, Body, Weapon, OffHand, Boots, Trinket }
 
 /// <summary>
-/// A piece of gear or a bag item. For Phase E it's just an icon + which slot it
-/// fits; stats (attack/defense/…) get added in Phase F. Create more via
-/// Assets ▸ Create ▸ unwritten ▸ Item, or Tools ▸ unwritten ▸ Create Starter Items.
+/// A piece of gear or a bag item: an icon, which slot it fits, and (Phase F) the
+/// stat bonuses it grants while equipped, or how much it heals when used. Create
+/// more via Assets ▸ Create ▸ unwritten ▸ Item, or Tools ▸ unwritten ▸ Create
+/// Starter Items.
 /// </summary>
 [CreateAssetMenu(fileName = "Item", menuName = "unwritten/Item")]
 public class Item : ScriptableObject
@@ -16,6 +17,15 @@ public class Item : ScriptableObject
 
     [Tooltip("Which equipment slot this fits. None = bag-only (consumable/material).")]
     public EquipSlotType slot = EquipSlotType.None;
+
+    [Header("Equipment bonuses (applied while equipped)")]
+    public int bonusHP;
+    public int bonusAttack;
+    public int bonusDefense;
+
+    [Header("Consumable")]
+    [Tooltip("Right-click in the bag to heal this much, then consume it. 0 = not a consumable.")]
+    public int healAmount;
 
     [TextArea] public string description;
 }

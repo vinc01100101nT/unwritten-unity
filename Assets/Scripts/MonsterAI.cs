@@ -28,12 +28,23 @@ public class MonsterAI : MonoBehaviour
     public float wanderPauseMin = 1f;
     public float wanderPauseMax = 3f;
 
+    [Header("Combat")]
+    [Tooltip("Attack power dealt to the player on contact.")]
+    public int attack = 3;
+    [Tooltip("XP awarded to the player when this dies.")]
+    public int xpReward = 5;
+    [Tooltip("How close (world units) it must be to hit the player.")]
+    public float touchRange = 0.9f;
+    [Tooltip("Seconds between contact hits.")]
+    public float touchInterval = 1f;
+
     Rigidbody2D rb;
     Transform player;
     Vector2 home;
     Vector2 wanderTarget;
     float nextWanderTime;
     bool chasing;
+    float nextTouch;
 
     void Awake()
     {
@@ -46,6 +57,11 @@ public class MonsterAI : MonoBehaviour
     {
         var pc = FindFirstObjectByType<PlayerController2D>();
         if (pc != null) player = pc.transform;
+
+        // Award XP to the character when this monster dies.
+        var health = GetComponent<Health>();
+        if (health != null)
+            health.onDeath.AddListener(() => { if (Character.Instance != null) Character.Instance.AddXP(xpReward); });
     }
 
     void FixedUpdate()
@@ -56,6 +72,14 @@ public class MonsterAI : MonoBehaviour
         // Aggro / leash transitions.
         if (chasing && toPlayer > leashRadius) chasing = false;
         else if (!chasing && toPlayer <= aggroRadius) chasing = true;
+
+        // Bump the player on contact (Phase F: monsters fight back).
+        if (player != null && toPlayer <= touchRange && Time.time >= nextTouch && Character.Instance != null)
+        {
+            int dealt = Character.Instance.TakeDamage(attack);
+            DamagePopup.Spawn(player.position, dealt, new Color(1f, 0.35f, 0.35f));  // red = player took a hit
+            nextTouch = Time.time + touchInterval;
+        }
 
         Vector2 dir = chasing ? ChaseDir(pos, toPlayer) : WanderDir(pos);
         if (dir != Vector2.zero)

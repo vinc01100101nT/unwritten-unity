@@ -35,12 +35,12 @@ public static class MonsterBuilder
         go.transform.position = NearPlayer(pc, 4f);
 
         Undo.RegisterCreatedObjectUndo(go, "Create Monster");
-        string combat = EnsurePlayerAttacker(pc);
+        string combat = EnsurePlayerCombat(pc);
 
         EditorSceneManager.MarkSceneDirty(go.scene);
         Selection.activeGameObject = go;
         Debug.Log($"[unwritten] Created Monster from '{tex.name}'.{combat} " +
-                  "Press Play, walk near it (it chases), and press J to kill it.");
+                  "Press Play, then left-click the monster to attack it (a down-arrow marks your target).");
     }
 
     [MenuItem("Tools/unwritten/Create Monster Spawner from selected SpriteSheet")]
@@ -72,7 +72,7 @@ public static class MonsterBuilder
         go.transform.position = NearPlayer(pc, 8f);
 
         Undo.RegisterCreatedObjectUndo(go, "Create Monster Spawner");
-        string combat = EnsurePlayerAttacker(pc);
+        string combat = EnsurePlayerCombat(pc);
 
         EditorSceneManager.MarkSceneDirty(go.scene);
         Selection.activeGameObject = go;
@@ -130,7 +130,8 @@ public static class MonsterBuilder
         var box = go.AddComponent<BoxCollider2D>();
         box.size = Vector2.one * 0.7f;
 
-        go.AddComponent<Health>();
+        // Phase F: give monsters enough HP that a few swings are needed (player base ATK 4).
+        go.AddComponent<Health>().maxHealth = 12;
         go.AddComponent<MonsterAI>();
 
         if (cols >= 4 && walk >= 1)
@@ -150,14 +151,34 @@ public static class MonsterBuilder
     static Vector3 NearPlayer(PlayerController2D pc, float dx) =>
         (pc != null ? pc.transform.position : Vector3.zero) + new Vector3(dx, 0f, 0f);
 
-    static string EnsurePlayerAttacker(PlayerController2D pc)
+    /// <summary>Ensure the player has mouse-target combat, with sensible range/cooldown.</summary>
+    public static string EnsurePlayerCombat(PlayerController2D pc)
     {
-        if (pc != null && pc.GetComponent<PlayerAttacker>() == null)
+        if (pc == null) return "";
+        var atk = pc.GetComponent<PlayerAttacker>();
+        bool added = atk == null;
+        if (added) atk = Undo.AddComponent<PlayerAttacker>(pc.gameObject);
+        atk.range = 1.4f;
+        atk.cooldown = 0.6f;
+        EditorUtility.SetDirty(atk);
+        return added ? " Added mouse-target combat to the Player (left-click a monster to attack)."
+                     : " Player combat is ready (left-click a monster to attack).";
+    }
+
+    [MenuItem("Tools/unwritten/Setup Mouse Combat")]
+    static void SetupMouseCombat()
+    {
+        var pc = Object.FindFirstObjectByType<PlayerController2D>();
+        if (pc == null)
         {
-            Undo.AddComponent<PlayerAttacker>(pc.gameObject);
-            return " Added a PlayerAttacker to the Player (press J to attack).";
+            EditorUtility.DisplayDialog("Setup Mouse Combat",
+                "No Player in the scene. Build it first: Tools ▸ unwritten ▸ Build Player from selected SpriteSheet.",
+                "OK");
+            return;
         }
-        return "";
+        string msg = EnsurePlayerCombat(pc);
+        Selection.activeGameObject = pc.gameObject;
+        Debug.Log("[unwritten] Setup Mouse Combat ✓ —" + msg);
     }
 
     static void EnsureFolder(string path)
