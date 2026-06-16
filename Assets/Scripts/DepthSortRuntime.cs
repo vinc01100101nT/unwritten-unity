@@ -16,11 +16,16 @@ using UnityEngine.Tilemaps;
 ///   FX               +31000..+32000   slash / click / target arrow / damage numbers
 ///
 /// On every scene load this: points the camera transparency axis up (a tie-fallback), bands the
-/// tilemaps by name, gives every in-scene unit a <see cref="YDepthSorter"/>, and **bakes obstacle
-/// tilemaps into per-object props** — so you just paint trees/houses on the "Obstacles" tilemap and
-/// they automatically become grouped, foot-sorted, walk-under props at Play (no editor step). The
-/// bake is NON-destructive: it disables the raw tilemap's renderer + collider for the play session
-/// and spawns the props; your painted tiles are untouched in the scene asset.
+/// tilemaps by name, gives every in-scene unit a <see cref="YDepthSorter"/>, and bakes any still-raw
+/// obstacle tilemaps into per-object props as a FALLBACK.
+///
+/// PERFORMANCE: the obstacle→prop bake is meant to run ONCE at author/generate time (call
+/// <see cref="BakeObstacles"/> from an editor tool — the Map Generator does this), so the saved scene
+/// already holds the prop objects and the play-time guard skips re-baking. Baked props are STATIC, so
+/// each gets a fixed <c>sortingOrder</c> computed once from its foot-Y and carries NO per-frame
+/// <see cref="YDepthSorter"/> — only moving units (player/mobs) sort every frame. Collision is NOT
+/// generated here any more: it's pre-baked into a merged "Collision" tilemap (CompositeCollider2D) at
+/// generate/stamp time. The bake only disables the raw tilemap's renderer; it never touches colliders.
 /// </summary>
 public static class DepthSortRuntime
 {
@@ -80,6 +85,8 @@ public static class DepthSortRuntime
         if (tr == null) return;
         string n = tm.name.ToLowerInvariant();
 
+        if (IsCollisionLayer(n)) return;   // the pre-baked collision layer renders nothing; never band it
+
         if (NameHas(n, "road", "street", "cobble", "path"))
             Set(tr, RoadOrder, TilemapRenderer.Mode.Chunk);
         else if (NameHas(n, "ground", "floor", "water", "grass", "base", "background", "terrain"))
@@ -107,24 +114,34 @@ public static class DepthSortRuntime
             || go.GetComponent<CharacterAnimator2D>() != null;
     }
 
-    // ---- runtime "Convert Obstacles to Objects" ------------------------------
+    // ---- obstacle tilemap → per-object props ---------------------------------
+
+    /// <summary>
+    /// Pre-bake entry point: bake every still-raw obstacle/building tilemap in the open scene(s) into
+    /// grouped, foot-sorted prop objects. Call this ONCE from an editor tool (the Map Generator does)
+    /// so the saved scene holds the props and play-time never has to. Idempotent — already-baked
+    /// tilemaps (renderer disabled) are skipped, so it doubles as the play-time fallback.
+    /// </summary>
+    public static void BakeObstacles() => BakeObstacleProps();
 
     // Bake every obstacle-ish tilemap into grouped, foot-sorted prop objects, then switch the raw
-    // tilemap off (renderer + collider) so the props are the only thing drawing / blocking.
+    // tilemap renderer off so the props are the only thing drawing. Colliders are NOT created or
+    // touched here any more — collision is the pre-baked "Collision" tilemap (CompositeCollider2D).
     static void BakeObstacleProps()
     {
         Transform root = null;
         foreach (var tm in Object.FindObjectsByType<Tilemap>(FindObjectsSortMode.None))
         {
             string n = tm.name.ToLowerInvariant();
+            if (IsCollisionLayer(n)) continue;          // never bake the collision layer into visuals
             if (!IsObstacleName(n)) continue;
 
             var tr = tm.GetComponent<TilemapRenderer>();
-            if (tr != null && !tr.enabled) continue;   // already baked (guard against re-runs)
+            if (tr != null && !tr.enabled) continue;    // already baked (guard against re-runs)
 
             if (root == null)
             {
-                root = new GameObject("ObstacleProps (runtime)").transform;
+                root = new GameObject("ObstacleProps").transform;
                 // Keep baked props in the SAME scene as the tilemap, so an additively-loaded map's
                 // props unload with that map (not with whatever scene happens to be active).
                 SceneManager.MoveGameObjectToScene(root.gameObject, tm.gameObject.scene);
@@ -137,9 +154,7 @@ public static class DepthSortRuntime
             foreach (var cluster in FindClusters(tm))
                 BuildProp(tm, cluster, cell, root, solid);
 
-            if (tr != null) tr.enabled = false;                 // raw tilemap no longer draws…
-            foreach (var col in tm.GetComponents<Collider2D>()) // …nor blocks; the props do both
-                col.enabled = false;
+            if (tr != null) tr.enabled = false;         // raw tilemap no longer draws; the props do
         }
     }
 
@@ -190,6 +205,8 @@ public static class DepthSortRuntime
         parent.transform.SetParent(root, true);
         parent.transform.position = new Vector3((bMinX + bMaxX) * 0.5f, bottomY, 0f);
 
+        // One renderer per cell, no colliders (collision is the pre-baked Collision tilemap).
+        var renderers = new List<SpriteRenderer>(cluster.Count);
         foreach (var c in cluster)
         {
             var child = new GameObject($"Cell_{c.x}_{c.y}");
@@ -198,27 +215,26 @@ public static class DepthSortRuntime
             var sr = child.AddComponent<SpriteRenderer>();
             var sprite = tm.GetSprite(c);
             if (sprite != null) sr.sprite = sprite;
-            if (solid)
-            {
-                var b = child.AddComponent<BoxCollider2D>();   // full footprint blocks
-                b.size = cell;
-            }
+            renderers.Add(sr);
         }
 
-        parent.AddComponent<YDepthSorter>();   // GROUP mode: whole prop sorts by its single foot
-
-        if (!solid)
-        {
-            // trunk-sized base collider so you can walk under the leafy top
-            var box = parent.AddComponent<BoxCollider2D>();
-            box.size = new Vector2(Mathf.Max(0.2f, (bMaxX - bMinX) * 0.6f), cell.y * 0.4f);
-            box.offset = new Vector2(0f, cell.y * 0.2f);
-        }
+        // The prop never moves, so its depth never changes: compute the foot-sorted order ONCE and bake
+        // it in — no per-frame YDepthSorter. The moving player keeps its own YDepthSorter and sorts
+        // correctly against these fixed orders (same -footY*Precision scale). This is the big per-frame
+        // CPU saving vs sorting every static tree/house every LateUpdate.
+        float footY = float.MaxValue;
+        foreach (var sr in renderers) if (sr.sprite != null) footY = Mathf.Min(footY, sr.bounds.min.y);
+        if (footY == float.MaxValue) footY = bottomY;
+        int order = OrderForY(footY);
+        foreach (var sr in renderers) sr.sortingOrder = order;
     }
 
     static bool IsObstacleName(string n)
         => NameHas(n, "obstacle", "obstruction", "wall", "prop", "tree", "house",
-                      "building", "collision", "foliage", "bush", "fence", "solid");
+                      "building", "foliage", "bush", "fence", "solid");
+
+    /// <summary>The dedicated pre-baked collision tilemap (renders nothing; holds the CompositeCollider2D).</summary>
+    public static bool IsCollisionLayer(string n) => n.Contains("collision");
 
     static void Set(TilemapRenderer tr, int order, TilemapRenderer.Mode mode)
     {

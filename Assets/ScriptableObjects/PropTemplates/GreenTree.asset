@@ -44,3 +44,7 @@ MonoBehaviour:
   - layer: Tilemap
     pos: {x: 2, y: 2}
     tile: {fileID: 11400000, guid: 22369c25067a21a44966403494bd109a, type: 2}
+  collisionMode: 1
+  collisionCells:
+  - {x: 2, y: 2}
+  - {x: 3, y: 2}

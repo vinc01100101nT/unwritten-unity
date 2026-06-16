@@ -13,6 +13,12 @@ public class TownLayout
     public readonly TileBase[] ground, road, decor, tree, overhead;   // per-cell, null = empty
     public readonly Dictionary<Vector2Int, TileBase> building = new Dictionary<Vector2Int, TileBase>(); // solid (→ Buildings)
     public readonly HashSet<Vector2Int> solid = new HashSet<Vector2Int>();   // blocks walking (buildings, boundary, trees)
+    // The ACTUAL in-game collision footprint in HALF-CELL coords (each = ½ a world cell on each axis;
+    // full cell (X,Y) → half-cells (2X,2Y),(2X+1,2Y),(2X,2Y+1),(2X+1,2Y+1)). Per-prop, resolved from
+    // PropTemplate.CollisionFootprint() (Auto/Custom/None) plus the boundary. Distinct from `solid`,
+    // which is the generator's full-cell layout constraint (road routing / connectivity). This set is
+    // what gets pre-baked into the merged Collision object (half-size boxes); `solid` never collides.
+    public readonly HashSet<Vector2Int> collision = new HashSet<Vector2Int>();
     public readonly HashSet<Vector2Int> protectedCells = new HashSet<Vector2Int>();   // stamped props + boundary: roads/carving NEVER tunnel through these
     public readonly List<Vector2Int> doors = new List<Vector2Int>();         // house entrance "approach" cells
     public readonly List<Vector2Int> npcSpawns = new List<Vector2Int>();
@@ -36,6 +42,13 @@ public class TownLayout
     public bool Walkable(Vector2Int c) => In(c) && !solid.Contains(c);
 
     public void AddSolid(Vector2Int c) { if (In(c)) solid.Add(c); }
+    /// <summary>Mark a HALF-cell as real in-game collision. Bounds are the half-grid (2× the full grid),
+    /// NOT In() — In() is a full-cell check and would drop everything past the map midpoint (the
+    /// "collision only in the lower-left quarter" bug).</summary>
+    public void AddCollision(Vector2Int c)
+    {
+        if (c.x >= 0 && c.y >= 0 && c.x < width * 2 && c.y < height * 2) collision.Add(c);
+    }
     /// <summary>Solid AND immovable: a stamped prop or boundary cell that carving must route around, never through.</summary>
     public void AddProtectedSolid(Vector2Int c) { if (In(c)) { solid.Add(c); protectedCells.Add(c); } }
     public void ClearSolid(Vector2Int c)

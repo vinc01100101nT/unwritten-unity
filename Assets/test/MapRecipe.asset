@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: MapRecipe
   m_EditorClassIdentifier: Assembly-CSharp::MapRecipe
   mapName: NewTown
-  seed: -1737066791
+  seed: 2116885591
   theme: {fileID: 11400000, guid: f2272be03c78cf54d9107b64d1b14bb1, type: 2}
   width: 48
   height: 48

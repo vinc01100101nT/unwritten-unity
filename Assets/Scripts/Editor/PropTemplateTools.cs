@@ -58,9 +58,21 @@ public static class PropTemplateTools
             return;
         }
 
-        // Normalise to a (0,0) origin = bottom-left of the bounding box.
-        int minX = raw.Min(c => c.pos.x), minY = raw.Min(c => c.pos.y);
-        int maxX = raw.Max(c => c.pos.x), maxY = raw.Max(c => c.pos.y);
+        // A layer named "Collision" defines the prop's painted collision, not its art — peel it off so it
+        // never renders. Anything you paint there becomes the prop's Custom collision footprint.
+        var collisionRaw = raw.Where(c => c.layer.ToLowerInvariant().Contains("collision")).ToList();
+        var visual = raw.Where(c => !c.layer.ToLowerInvariant().Contains("collision")).ToList();
+        if (visual.Count == 0)
+        {
+            EditorUtility.DisplayDialog("Capture Prop Template",
+                "Only a Collision layer was painted. Paint the prop's ART too (on Buildings/Obstacles/" +
+                "Decor/…), then capture — collision is optional and defaults to Auto.", "OK");
+            return;
+        }
+
+        // Normalise to a (0,0) origin = bottom-left of the ART's bounding box (collision shares it).
+        int minX = visual.Min(c => c.pos.x), minY = visual.Min(c => c.pos.y);
+        int maxX = visual.Max(c => c.pos.x), maxY = visual.Max(c => c.pos.y);
 
         if (!AssetDatabase.IsValidFolder(DefaultFolder)) CreateFolders(DefaultFolder);
         string path = EditorUtility.SaveFilePanelInProject(
@@ -71,12 +83,21 @@ public static class PropTemplateTools
         var tpl = ScriptableObject.CreateInstance<PropTemplate>();
         tpl.size = new Vector2Int(maxX - minX + 1, maxY - minY + 1);
         tpl.anchorCell = new Vector2Int(tpl.size.x / 2, 0);   // default: bottom-centre
-        tpl.cells = raw.Select(c => new PropTemplate.Cell
+        tpl.cells = visual.Select(c => new PropTemplate.Cell
         {
             layer = c.layer,
             pos = new Vector2Int(c.pos.x - minX, c.pos.y - minY),
             tile = c.tile,
         }).ToList();
+
+        // Painted a Collision layer → Custom collision (each painted FULL cell → its 4 half-cells, since
+        // the Tile Palette paints full cells); otherwise Auto (derived at bake).
+        var collHalf = new HashSet<Vector2Int>();
+        foreach (var c in collisionRaw)
+            foreach (var h in PropTemplate.HalfCellsOf(new Vector2Int(c.pos.x - minX, c.pos.y - minY)))
+                collHalf.Add(h);
+        tpl.collisionCells = new List<Vector2Int>(collHalf);
+        tpl.collisionMode = collHalf.Count > 0 ? PropCollision.Custom : PropCollision.Auto;
 
         AssetDatabase.CreateAsset(tpl, path);
         AssetDatabase.SaveAssets();
@@ -85,8 +106,10 @@ public static class PropTemplateTools
 
         string byLayer = string.Join(", ", tpl.cells.GroupBy(c => c.layer)
             .Select(g => $"{g.Key}×{g.Count()}"));
+        string collInfo = tpl.collisionMode == PropCollision.Custom
+            ? $"Custom collision ({tpl.collisionCells.Count} cells)" : "Auto collision";
         Debug.Log($"[unwritten] Captured '{tpl.name}' — {tpl.size.x}×{tpl.size.y} footprint, " +
-                  $"anchor at {tpl.anchorCell}, placement {tpl.placement} (change in Inspector). Layers: {byLayer}.");
+                  $"anchor at {tpl.anchorCell}, placement {tpl.placement}, {collInfo} (change in Inspector). Layers: {byLayer}.");
     }
 
     [MenuItem("Tools/unwritten/Stamp Prop Template")]
@@ -132,10 +155,21 @@ public static class PropTemplateTools
             DepthSortRuntime.BandTilemap(tm);
         }
 
+        // Pre-bake this prop's collision (Auto/Custom/None) as merged half-size boxes on the shared
+        // Collision object so you can verify it as green outlines in the Scene view — the same path the
+        // generator uses. Half-cell footprint maps to world half-cells at origin*2. Mode None paints nothing.
+        var footprint = tpl.CollisionFootprint();
+        if (footprint.Count > 0)
+        {
+            var collision = CollisionLayerTools.GetOrCreate(grid);
+            CollisionLayerTools.Paint(grid, collision,
+                footprint.Select(cc => new Vector2Int(origin.x * 2 + cc.x, origin.y * 2 + cc.y)));
+        }
+
         EditorSceneManager.MarkSceneDirty(grid.gameObject.scene);
-        Debug.Log($"[unwritten] Stamped '{tpl.name}' ({tpl.cells.Count} cells) at {origin} across " +
-                  $"{touched.Count} layer(s): {string.Join(", ", touched.Select(t => t.name))}. " +
-                  "Banded all tilemaps for the Scene-view preview; press Play to see DepthSortRuntime bake it.");
+        Debug.Log($"[unwritten] Stamped '{tpl.name}' ({tpl.cells.Count} cells, {tpl.collisionMode} collision) " +
+                  $"at {origin} across {touched.Count} layer(s): {string.Join(", ", touched.Select(t => t.name))}. " +
+                  "Collision shows as green outlines; press Play to see DepthSortRuntime bake the visuals.");
     }
 
     // ---- helpers -------------------------------------------------------------
@@ -167,16 +201,8 @@ public static class PropTemplateTools
         Undo.RegisterCreatedObjectUndo(go, "Stamp Prop Template");
         var created = go.GetComponent<Tilemap>();
         DepthSortRuntime.BandTilemap(created);          // same sorting the runtime expects
-        if (IsSolidLayer(name)) go.AddComponent<TilemapCollider2D>();
+        // No collider on the visual layer — collision is the pre-baked Collision tilemap (built above).
         return created;
-    }
-
-    static bool IsSolidLayer(string name)
-    {
-        string n = name.ToLowerInvariant();
-        return n.Contains("building") || n.Contains("house") || n.Contains("wall") ||
-               n.Contains("obstacle") || n.Contains("fence") || n.Contains("solid") ||
-               n.Contains("tree") || n.Contains("collision");
     }
 
     static void CreateFolders(string path)

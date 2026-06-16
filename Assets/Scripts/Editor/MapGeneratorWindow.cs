@@ -158,9 +158,11 @@ public class MapGeneratorWindow : EditorWindow
         var grid = new GameObject("Grid", typeof(Grid)).GetComponent<Grid>();
         SceneManager.MoveGameObjectToScene(grid.gameObject, scene);
 
+        // No colliders on the VISUAL layers — collision is the single pre-baked "Collision" tilemap below
+        // (merged CompositeCollider2D), so we never carry hundreds of per-cell box colliders.
         var ground    = NewLayer(grid, "Ground", false);
-        var obstacles = NewLayer(grid, "Obstacles", true);
-        var buildings = NewLayer(grid, "Buildings", true);
+        var obstacles = NewLayer(grid, "Obstacles", false);
+        var buildings = NewLayer(grid, "Buildings", false);
         var decor     = NewLayer(grid, "Decor", false);
         var overhead  = NewLayer(grid, "Overhead", false);
 
@@ -176,6 +178,13 @@ public class MapGeneratorWindow : EditorWindow
         CommitArray(overhead, layout, layout.overhead);
         foreach (var kv in layout.building)
             buildings.SetTile(new Vector3Int(kv.Key.x, kv.Key.y, 0), kv.Value);
+
+        // --- pre-baked collision (merged, static, computed once) ---
+        // Materialise the per-prop collision footprint (Auto/Custom/None) + the boundary — all in
+        // HALF-cells — into ONE Collision object whose CompositeCollider2D merges the half-size boxes
+        // into a few polygons. No on-Play collider generation — see CollisionLayerTools / DepthSortRuntime.
+        var collision = CollisionLayerTools.GetOrCreate(grid);
+        CollisionLayerTools.Paint(grid, collision, layout.collision);
 
         // A RuleTile set during a scripted SetTile loop resolves against the neighbours that exist AT
         // THAT MOMENT and isn't re-evaluated when later neighbours are added — so early cells freeze with
@@ -201,6 +210,12 @@ public class MapGeneratorWindow : EditorWindow
         var monPrefab = recipe.theme.monsterPrefabs.Count > 0 ? recipe.theme.monsterPrefabs[0] : null;
         for (int i = 0; i < layout.monsterSpawns.Count; i++)
             MakeSpawner(grid, scene, "MonsterSpawner_" + i, layout.monsterSpawns[i], monPrefab);
+
+        // --- pre-bake visuals NOW (not at Play) ---
+        // Convert the Obstacles/Buildings tilemaps into static, foot-sorted prop objects with fixed sort
+        // orders at GENERATE time, so the saved scene loads with zero per-Play bake work or per-frame
+        // sorting. DepthSortRuntime's play-time bake then sees the renderers already disabled and skips.
+        DepthSortRuntime.BakeObstacles();
 
         // --- preview only: nothing is written to disk until you hit "Save Town to Assets/Scenes" ---
         Debug.Log($"[unwritten] Generated PREVIEW of '{recipe.mapName}' ({recipe.width}×{recipe.height}, seed {recipe.seed}).  " +

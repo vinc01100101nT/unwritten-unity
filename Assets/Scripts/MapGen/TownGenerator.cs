@@ -283,6 +283,7 @@ public static class TownGenerator
         if (treeline) L.tree[L.Idx(c)] = tile;   // treeline = walk-under Obstacles layer
         else L.building[c] = tile;
         L.AddProtectedSolid(c);   // the wall/treeline is immovable — carving routes around it
+        foreach (var h in PropTemplate.HalfCellsOf(c)) L.AddCollision(h);   // edge blocks (half-cells)
     }
 
     // ---- generic prop placement ----------------------------------------------
@@ -420,6 +421,13 @@ public static class TownGenerator
             { L.tree[L.Idx(c)] = cell.tile; L.AddProtectedSolid(c); }
             else { L.building[c] = cell.tile; L.AddProtectedSolid(c); }   // default: solid building
         }
+
+        // Real in-game collision = the prop's resolved footprint (Auto/Custom/None) in HALF-cells. Kept
+        // SEPARATE from the layout's `solid`/protected sets above (those still treat the whole footprint as
+        // occupied so roads route around it); only THIS becomes a collider, pre-baked into the Collision
+        // object. The prop's full-cell origin maps to half-cell origin*2; offsets are already half-cells.
+        foreach (var cc in p.CollisionFootprint())
+            L.AddCollision(new Vector2Int(origin.x * 2 + cc.x, origin.y * 2 + cc.y));
     }
 
     static PropTemplate WeightedPick(List<PropTemplate> list, MapRng rng)

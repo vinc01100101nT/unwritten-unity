@@ -44,3 +44,11 @@ MonoBehaviour:
   - layer: Buildings
     pos: {x: 2, y: 2}
     tile: {fileID: 11400000, guid: 3e4f961f21d5bcb4983e0c242a301c62, type: 2}
+  collisionMode: 1
+  collisionCells:
+  - {x: 4, y: 2}
+  - {x: 3, y: 2}
+  - {x: 2, y: 2}
+  - {x: 1, y: 2}
+  - {x: 5, y: 2}
+  - {x: 0, y: 2}
