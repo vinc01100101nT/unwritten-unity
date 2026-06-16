@@ -180,11 +180,11 @@ public static class MonsterBuilder
         if (slash != null) atk.slashSheet = slash;
         EditorUtility.SetDirty(atk);
 
-        // Dota-style order controller (right-click move/attack/follow, A attack-click, S stop)
-        // and the Kenney hardware cursor that swaps pointer/sword/crosshair.
+        // Dota-style order controller (right-click move/attack/follow, A attack-click, S stop).
+        // The Kenney hardware cursor is no longer added here — it's a global system on
+        // GameSystems now (Tools ▸ unwritten ▸ Setup Global Systems), so it survives portals.
         if (pc.GetComponent<PlayerCommander>() == null)
             Undo.AddComponent<PlayerCommander>(pc.gameObject);
-        EnsureGameCursor(pc);
 
         // Attack pose, pulled from this character's own SeparateAnim/Attack.png.
         bool pose = false;
@@ -209,16 +209,17 @@ public static class MonsterBuilder
 
     const string CursorDir = "Assets/Art/KenneyCursorPack/PNG/Outline/Default";
 
-    /// <summary>Attach + configure the hardware <see cref="GameCursor"/> on the player using
-    /// the Outline Kenney cursors. Force-reimports the three PNGs so they're readable Cursor
-    /// textures (see PixelArtImportPostprocessor) — no manual reimport needed.</summary>
-    static void EnsureGameCursor(PlayerController2D pc)
+    /// <summary>Attach + configure the hardware <see cref="GameCursor"/> on a host object
+    /// (now the persistent GameSystems, not the player) using the Outline Kenney cursors.
+    /// Force-reimports the three PNGs so they're readable Cursor textures (see
+    /// PixelArtImportPostprocessor) — no manual reimport needed.</summary>
+    public static void ConfigureCursor(GameObject host)
     {
         foreach (var n in new[] { "pointer_b", "tool_sword_a", "target_b" })
             AssetDatabase.ImportAsset($"{CursorDir}/{n}.png", ImportAssetOptions.ForceUpdate);
 
-        var cursor = pc.GetComponent<GameCursor>();
-        if (cursor == null) cursor = Undo.AddComponent<GameCursor>(pc.gameObject);
+        var cursor = host.GetComponent<GameCursor>();
+        if (cursor == null) cursor = Undo.AddComponent<GameCursor>(host);
 
         cursor.defaultCursor     = LoadCursorTex("pointer_b");     // normal pointer
         cursor.attackCursor      = LoadCursorTex("tool_sword_a");  // hovering an enemy
@@ -235,22 +236,6 @@ public static class MonsterBuilder
 
     static Texture2D LoadCursorTex(string name)
         => AssetDatabase.LoadAssetAtPath<Texture2D>($"{CursorDir}/{name}.png");
-
-    [MenuItem("Tools/unwritten/Setup Mouse Combat")]
-    static void SetupMouseCombat()
-    {
-        var pc = Object.FindFirstObjectByType<PlayerController2D>();
-        if (pc == null)
-        {
-            EditorUtility.DisplayDialog("Setup Mouse Combat",
-                "No Player in the scene. Build it first: Tools ▸ unwritten ▸ Build Player from selected SpriteSheet.",
-                "OK");
-            return;
-        }
-        string msg = EnsurePlayerCombat(pc);
-        Selection.activeGameObject = pc.gameObject;
-        Debug.Log("[unwritten] Setup Mouse Combat ✓ —" + msg);
-    }
 
     static void EnsureFolder(string path)
     {

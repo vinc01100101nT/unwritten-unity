@@ -26,6 +26,7 @@ public static class DepthSortRuntime
 {
     // ---- band constants (keep within ±32767) ---------------------------------
     public const int GroundOrder   = -32000;
+    public const int RoadOrder     = -31000;   // walkable paths: above ground, below decor/entities
     public const int DecorOrder    = -30000;
     public const int ObstacleStopgapOrder = -28000;  // editor-preview order for the raw (un-baked) obstacle tilemap
     public const int EntityClamp   =  25000;
@@ -79,7 +80,9 @@ public static class DepthSortRuntime
         if (tr == null) return;
         string n = tm.name.ToLowerInvariant();
 
-        if (NameHas(n, "ground", "floor", "water", "path", "grass", "base", "background", "terrain"))
+        if (NameHas(n, "road", "street", "cobble", "path"))
+            Set(tr, RoadOrder, TilemapRenderer.Mode.Chunk);
+        else if (NameHas(n, "ground", "floor", "water", "grass", "base", "background", "terrain"))
             Set(tr, GroundOrder, TilemapRenderer.Mode.Chunk);
         else if (NameHas(n, "decor", "decal", "overlay", "detail", "underfoot"))
             Set(tr, DecorOrder, TilemapRenderer.Mode.Chunk);
@@ -119,7 +122,13 @@ public static class DepthSortRuntime
             var tr = tm.GetComponent<TilemapRenderer>();
             if (tr != null && !tr.enabled) continue;   // already baked (guard against re-runs)
 
-            if (root == null) root = new GameObject("ObstacleProps (runtime)").transform;
+            if (root == null)
+            {
+                root = new GameObject("ObstacleProps (runtime)").transform;
+                // Keep baked props in the SAME scene as the tilemap, so an additively-loaded map's
+                // props unload with that map (not with whatever scene happens to be active).
+                SceneManager.MoveGameObjectToScene(root.gameObject, tm.gameObject.scene);
+            }
 
             var grid = tm.GetComponentInParent<Grid>();
             Vector2 cell = grid != null ? (Vector2)grid.cellSize : Vector2.one;

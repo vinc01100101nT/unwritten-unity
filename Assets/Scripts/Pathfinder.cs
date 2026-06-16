@@ -142,6 +142,12 @@ public static class Pathfinder
         bool found = false;
         int expansions = 0;
 
+        // Track the reachable node that got CLOSEST to the goal. If the goal is walled off, we
+        // return a PARTIAL route to this node (walk as far toward the goal as we can) instead of
+        // giving up — that's what stops a unit from beelining straight through the wall/boundary.
+        long bestKey = startKey;
+        float bestH = Heur(sx, sy, gx, gy);
+
         while (open.Count > 0 && expansions < MaxExpansions)
         {
             var cur = HeapPop(open);
@@ -149,6 +155,9 @@ public static class Pathfinder
             expansions++;
 
             if (cur.x == gx && cur.y == gy) { found = true; break; }
+
+            float hcur = Heur(cur.x, cur.y, gx, gy);
+            if (hcur < bestH) { bestH = hcur; bestKey = cur.key; }
 
             float cg = g[cur.key];
             foreach (var (dx, dy) in N8)
@@ -176,11 +185,20 @@ public static class Pathfinder
             }
         }
 
-        if (!found) { LastOutcome = $"no-route (searched {expansions} cells)"; return null; }
+        // Reached the goal → route there. Walled off → route to the closest cell we could reach.
+        long endKey = found ? goalKey : bestKey;
+
+        // We couldn't even step off the start cell toward the goal — genuinely stuck. Let the
+        // caller decide (hold position); there's nowhere closer to walk to.
+        if (!found && endKey == startKey)
+        {
+            LastOutcome = $"no-route (searched {expansions} cells) — already as close as possible";
+            return null;
+        }
 
         // Walk cameFrom back to the start, collecting cell centres.
         var cells = new List<Vector2>();
-        long k = goalKey;
+        long k = endKey;
         while (true)
         {
             cells.Add(Center((int)(k >> 32), (int)(uint)k));
@@ -189,12 +207,17 @@ public static class Pathfinder
         }
         cells.Reverse();
 
-        // Smooth with the REAL endpoints (use exact from/to, not their cell centres).
+        // Smooth. End on the EXACT goal if we reached it; otherwise end on the closest reachable
+        // cell centre (NEVER the unreachable goal), so the unit walks up to the wall and stops on
+        // the inside instead of trying to push through it.
+        Vector2 endPoint = found ? to : Center((int)(endKey >> 32), (int)(uint)endKey);
         var pts = new List<Vector2>(cells.Count + 1) { from };
         for (int i = 1; i < cells.Count - 1; i++) pts.Add(cells[i]);
-        pts.Add(to);
+        pts.Add(endPoint);
         var smoothed = Smooth(pts, radius);
-        LastOutcome = $"routed ({smoothed.Count} waypoints)";
+        LastOutcome = found
+            ? $"routed ({smoothed.Count} waypoints)"
+            : $"partial → closest reachable ({smoothed.Count} waypoints, searched {expansions} cells)";
         return smoothed;
     }
 

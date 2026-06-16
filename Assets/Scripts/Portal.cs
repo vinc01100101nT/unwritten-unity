@@ -1,9 +1,10 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 /// <summary>
-/// A doorway between maps. When the player walks into its trigger collider, it
-/// loads <c>targetScene</c>. Both scenes must be listed in File ▸ Build Settings.
+/// A doorway between maps. When the player walks into its trigger collider, it asks
+/// <see cref="MapManager"/> to swap to <c>targetScene</c> — loaded additively under the
+/// persistent <c>Systems</c> scene, with the old map unloaded. Both maps must be listed in
+/// File ▸ Build Settings.
 /// </summary>
 [RequireComponent(typeof(Collider2D))]
 public class Portal : MonoBehaviour
@@ -25,8 +26,7 @@ public class Portal : MonoBehaviour
     {
         if (other.GetComponent<PlayerController2D>() == null) return;   // only the player triggers it
         if (string.IsNullOrEmpty(targetScene)) return;
-        SceneTravel.Target = spawnId;            // tell the next scene where to drop us
-        SceneManager.LoadScene(targetScene);
+        MapManager.Travel(targetScene, spawnId);   // additive swap; Systems (HUD/player) stays loaded
     }
 
     // Draw a translucent box in the Scene view so you can place it (invisible in-game).

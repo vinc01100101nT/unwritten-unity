@@ -22,19 +22,27 @@ public class Bootstrap : MonoBehaviour
     [Header("Obstacles")]
     public int crateCount = 14;
 
-    [Header("Player")]
-    [Tooltip("Your real animated player (SpriteRenderer + PlayerController2D + " +
-             "CharacterAnimator2D). Leave empty to spawn the placeholder box.")]
-    public GameObject playerOverride;
-
     void Start()
     {
+        // When the persistent Systems scene is present it owns the camera + player, so the
+        // per-map Bootstrap stands down entirely (no second camera / placeholder avatar).
+        if (GameSystems.Instance != null) return;
+
         SetupCamera();
         if (buildArena) BuildArena();
-        var player = playerOverride != null
-            ? PlacePlayer(playerOverride, ResolveSpawn(playerOverride))
-            : SpawnPlayer(ResolveSpawn(null));
-        AttachCameraFollow(player.transform);
+
+        // The player avatar and camera-follow now live in the persistent systems layer:
+        // GameSystems spawns Resources/Player.prefab and PersistentPlayer positions it at a
+        // SpawnPoint + aims the camera, surviving portals. Bootstrap no longer owns the player.
+        //
+        // Fallback for the bare prototype (no Player prefab set up yet): spawn the placeholder
+        // box so the arena is still playable. It's made persistent too, so it behaves like the
+        // real prefab would — one avatar that survives scene loads.
+        if (PersistentPlayer.Instance == null && FindFirstObjectByType<PlayerController2D>() == null)
+        {
+            var player = SpawnPlaceholderPlayer();
+            AttachCameraFollow(player.transform);
+        }
     }
 
     void SetupCamera()
@@ -117,9 +125,12 @@ public class Bootstrap : MonoBehaviour
         go.transform.SetParent(parent);
     }
 
-    GameObject SpawnPlayer(Vector2 pos)
+    // Prototype fallback only: a generated box avatar for the procedural arena when no real
+    // Player prefab has been set up. PersistentPlayer makes it the single persistent avatar,
+    // and PersistentPlayer.Start moves it to a SpawnPoint if the scene has one.
+    GameObject SpawnPlaceholderPlayer()
     {
-        var go = MakeSprite("Player", new Color(1f, 0.80f, 0.30f), new Vector3(pos.x, pos.y, 0f), 0);
+        var go = MakeSprite("Player", new Color(1f, 0.80f, 0.30f), Vector3.zero, 0);
 
         var rb = go.AddComponent<Rigidbody2D>();
         rb.gravityScale = 0f;
@@ -131,36 +142,10 @@ public class Bootstrap : MonoBehaviour
         go.AddComponent<PlayerController2D>();
         go.AddComponent<PathAgent>();          // smart routing around walls/crates
         // Click-to-move for the placeholder box too (pulls in PlayerAttacker via RequireComponent).
-        // The real animated player also gets a GameCursor via Tools ▸ unwritten ▸ Setup Mouse Combat.
+        // The hardware cursor now lives on GameSystems (Setup Global Systems), not on the player.
         go.AddComponent<PlayerCommander>();
+        go.AddComponent<PersistentPlayer>();   // one avatar, survives portals
         return go;
-    }
-
-    // Use an existing player GameObject (your real animated character) instead of
-    // the generated box: drop it at the spawn point and hand it back.
-    GameObject PlacePlayer(GameObject player, Vector2 pos)
-    {
-        player.transform.position = new Vector3(pos.x, pos.y, 0f);
-        return player;
-    }
-
-    // Where the player should appear: at the SpawnPoint matching a pending travel
-    // target (set by a Portal), otherwise wherever it already sits in the scene.
-    Vector2 ResolveSpawn(GameObject player)
-    {
-        if (!string.IsNullOrEmpty(SceneTravel.Target))
-        {
-            foreach (var sp in FindObjectsByType<SpawnPoint>(FindObjectsSortMode.None))
-            {
-                if (sp.id == SceneTravel.Target)
-                {
-                    SceneTravel.Target = null;
-                    return sp.transform.position;
-                }
-            }
-            SceneTravel.Target = null;   // id not found in this scene; ignore it
-        }
-        return player != null ? (Vector2)player.transform.position : Vector2.zero;
     }
 
     void AttachCameraFollow(Transform target)

@@ -10,15 +10,19 @@ using UnityEngine.UI;
 /// </summary>
 public static class WorldTools
 {
+    // The dialogue box and interact prompt are GLOBAL singletons — they live in the persistent Systems
+    // layer, not per-map. These tools build them as Resources prefabs; Setup Systems Scene pulls them in.
+    const string DialoguePrefabPath = "Assets/Resources/DialogueCanvas.prefab";
+    const string PromptPrefabPath   = "Assets/Resources/InteractPromptCanvas.prefab";
+
     [MenuItem("Tools/unwritten/Build Dialogue UI")]
     static void BuildDialogueUI()
     {
-        if (Object.FindFirstObjectByType<DialogueUI>() != null)
-        {
-            EditorUtility.DisplayDialog("Build Dialogue UI",
-                "A DialogueUI already exists in the scene.", "OK");
+        if (System.IO.File.Exists(DialoguePrefabPath) &&
+            !EditorUtility.DisplayDialog("Build Dialogue UI",
+                $"{DialoguePrefabPath} already exists.\n\nRebuild it? Systems pulls this prefab in, so this " +
+                "replaces the global dialogue box.", "Rebuild", "Cancel"))
             return;
-        }
 
         var canvasGO = new GameObject("DialogueCanvas",
             typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -59,21 +63,19 @@ public static class WorldTools
         ui.bodyText = body.GetComponent<Text>();
         panel.SetActive(false);
 
-        Undo.RegisterCreatedObjectUndo(canvasGO, "Build Dialogue UI");
-        EditorSceneManager.MarkSceneDirty(canvasGO.scene);
-        Selection.activeGameObject = canvasGO;
-        Debug.Log("[unwritten] Built DialogueCanvas. Add a PlayerInteractor to the Player, then make an NPC.");
+        SaveAsResourcesPrefab(canvasGO, DialoguePrefabPath);
+        Debug.Log($"[unwritten] Built global DialogueCanvas → {DialoguePrefabPath}.  " +
+                  "Run Setup Systems Scene to pull it into the persistent layer (it no longer lives per-map).");
     }
 
     [MenuItem("Tools/unwritten/Build Interact Prompt")]
     static void BuildInteractPrompt()
     {
-        if (Object.FindFirstObjectByType<InteractPrompt>() != null)
-        {
-            EditorUtility.DisplayDialog("Build Interact Prompt",
-                "An InteractPrompt already exists in the scene.", "OK");
+        if (System.IO.File.Exists(PromptPrefabPath) &&
+            !EditorUtility.DisplayDialog("Build Interact Prompt",
+                $"{PromptPrefabPath} already exists.\n\nRebuild it? Systems pulls this prefab in, so this " +
+                "replaces the global interact prompt.", "Rebuild", "Cancel"))
             return;
-        }
 
         var canvasGO = new GameObject("InteractPromptCanvas",
             typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -110,10 +112,23 @@ public static class WorldTools
         ip.label = t;
         promptGO.SetActive(false);
 
-        Undo.RegisterCreatedObjectUndo(canvasGO, "Build Interact Prompt");
-        EditorSceneManager.MarkSceneDirty(canvasGO.scene);
-        Selection.activeGameObject = canvasGO;
-        Debug.Log("[unwritten] Built InteractPromptCanvas.");
+        SaveAsResourcesPrefab(canvasGO, PromptPrefabPath);
+        Debug.Log($"[unwritten] Built global InteractPromptCanvas → {PromptPrefabPath}.  " +
+                  "Run Setup Systems Scene to pull it into the persistent layer (it no longer lives per-map).");
+    }
+
+    /// <summary>Save a freshly-built canvas as a Resources prefab (the single source of truth that Setup
+    /// Systems Scene instantiates into Systems.unity), then discard the scene instance so it never lingers
+    /// in a map scene. Mirrors how Build UI Shell makes GameUICanvas.prefab.</summary>
+    static void SaveAsResourcesPrefab(GameObject go, string path)
+    {
+        if (!AssetDatabase.IsValidFolder("Assets/Resources")) AssetDatabase.CreateFolder("Assets", "Resources");
+        PrefabUtility.SaveAsPrefabAsset(go, path);
+        Object.DestroyImmediate(go);   // the prefab is the artifact; don't leave a copy in the open scene
+        AssetDatabase.SaveAssets();
+        var asset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+        Selection.activeObject = asset;
+        EditorGUIUtility.PingObject(asset);
     }
 
     [MenuItem("Tools/unwritten/Create NPC from selected SpriteSheet")]

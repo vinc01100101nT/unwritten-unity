@@ -21,7 +21,7 @@ public class PlayerAttacker : MonoBehaviour
     [Tooltip("Fallback damage if there's no Character yet; normally uses Character.Attack.")]
     public int damage = 1;
 
-    [Header("Attack feedback (assigned by Setup Mouse Combat)")]
+    [Header("Attack feedback (assigned by Run All / Setup Global Systems)")]
     [Tooltip("Slash FX strip (e.g. FX/Attack/SlashCurved/SpriteSheet.png, 32px frames).")]
     public Texture2D slashSheet;
     public int slashFrameSize = 32;

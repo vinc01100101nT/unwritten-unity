@@ -87,21 +87,12 @@ public static class PlayerBuilder
 
         Undo.RegisterCreatedObjectUndo(go, "Build Player");
 
-        // Auto-wire into Bootstrap if one exists in the open scene.
-        var boot = Object.FindFirstObjectByType<Bootstrap>();
-        if (boot != null)
-        {
-            Undo.RecordObject(boot, "Assign Player Override");
-            boot.playerOverride = go;
-            EditorUtility.SetDirty(boot);
-        }
-
         EditorSceneManager.MarkSceneDirty(go.scene);
         Selection.activeGameObject = go;
 
-        Debug.Log($"[unwritten] Built Player from '{tex.name}' — {cols} columns, {walk} walk frames/direction" +
-                  (boot != null ? ", wired into Bootstrap. Press Play."
-                                : ". No Bootstrap in scene — drag Player into Bootstrap's Player Override."));
+        Debug.Log($"[unwritten] Built Player from '{tex.name}' — {cols} columns, {walk} walk frames/direction. " +
+                  "Next: Tools ▸ unwritten ▸ Setup Global Systems to make this the persistent player " +
+                  "(it'll survive portals, carrying movement + the global cursor).");
     }
 
     // Unity names sliced sprites "<sheet>_0" … "_27"; sort by that trailing number.

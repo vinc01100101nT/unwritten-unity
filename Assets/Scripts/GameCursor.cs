@@ -13,7 +13,7 @@ using UnityEngine;
 /// </summary>
 public class GameCursor : MonoBehaviour
 {
-    [Header("Cursor textures (assigned by Setup Mouse Combat)")]
+    [Header("Cursor textures (assigned by Setup Global Systems)")]
     public Texture2D defaultCursor;
     [Tooltip("Pixel offset of the 'active point' from the texture's top-left.")]
     public Vector2 defaultHotspot = new Vector2(3, 3);     // tip of pointer_b

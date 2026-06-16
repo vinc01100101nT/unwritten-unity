@@ -81,7 +81,7 @@ public static class UIShellBuilder
         var skills = BuildSkillsPanel(root);
         BuildTooltip(root);       // on top of every panel
         // (The old UI-image sword cursor was retired — GameCursor now drives a hardware
-        //  cursor from the Kenney pack, wired by Tools ▸ unwritten ▸ Setup Mouse Combat.)
+        //  cursor from the Kenney pack, wired by Tools ▸ unwritten ▸ Setup Global Systems.)
 
         var toggle = canvasGO.AddComponent<PanelToggle>();
         toggle.panels = new[]

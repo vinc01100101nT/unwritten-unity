@@ -3,14 +3,13 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// The player's character data — the persistent hub for Phase F's numbers. It
-/// survives scene loads (DontDestroyOnLoad) and auto-creates before the first
-/// scene, so the per-scene player avatar, monsters, and the UI all just reference
-/// <see cref="Instance"/>. Holds level/XP, base stats + per-level growth, current
-/// HP, and equipped items; effective stats = base + growth + equipment bonuses.
+/// The player's character data — the hub for Phase F's numbers. It lives in the persistent
+/// <c>Systems</c> scene (which is never unloaded), so the player avatar, monsters, and the UI
+/// all just reference <see cref="Instance"/> and it stays alive across map swaps with no
+/// <c>DontDestroyOnLoad</c>. Holds level/XP, base stats + per-level growth, current HP, and
+/// equipped items; effective stats = base + growth + equipment bonuses.
 ///
-/// (No save-to-disk yet — a fresh session starts at level 1. Persistence across
-/// the Field↔Town portal works because this object stays alive.)
+/// (No save-to-disk yet — a fresh session starts at level 1.)
 /// </summary>
 public class Character : MonoBehaviour
 {
@@ -57,15 +56,7 @@ public class Character : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
-        DontDestroyOnLoad(gameObject);
         CurrentHP = MaxHP;
-    }
-
-    // Create the character before any scene loads, so everything can rely on it.
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    static void Bootstrap()
-    {
-        if (Instance == null) new GameObject("Character").AddComponent<Character>();
     }
 
     public Item GetEquipped(EquipSlotType slot)
